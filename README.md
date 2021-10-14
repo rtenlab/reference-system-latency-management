@@ -146,6 +146,12 @@ colcon build --cmake-args -DRUN_BENCHMARK=TRUE -DTEST_PLATFORM=TRUE -DPICAS=TRUE
 ```
 This compiles [`autoware_default_singlethreaded_picas_single_executor.cpp`](autoware_reference_system/src/ros2/executor/autoware_default_singlethreaded_picas_single_executor.cpp) and [`autoware_default_singlethreaded_picas_multi_executors.cpp`](autoware_reference_system/src/ros2/executor/autoware_default_singlethreaded_picas_multi_executors.cpp), where the first one launches a single instance (thread) of the PICAS executor and the second launches four threads on different CPUs (CPUS 0-3). PICAS allows the user to assign priorities to individual callbacks. The default callback priorities are defined in [`system/priority/default.hpp`](autoware_reference_system/include/autoware_reference_system/system/priority/default.hpp).
 
+**Configuration for PICAS**: Since PICAS leverages rt priority of with `SCHED_FIFO` scheduling policy in the Linux. Please modify ``/etc/security/limits.conf`` file as below, then reboot the system.
+```
+<userid>    hard    rtprio  99
+<userid>    soft    rtprio  99
+```
+
 ## Contributing
 
 If you see a missing configuration on the list above that you would like to see benchmarked against please follow the steps below to request it to be added.
