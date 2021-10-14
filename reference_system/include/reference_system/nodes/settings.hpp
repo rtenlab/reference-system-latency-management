@@ -99,4 +99,3 @@ struct SensorSettings
 };
 }  // namespace nodes
 #endif  // REFERENCE_SYSTEM__NODES__SETTINGS_HPP_
-
