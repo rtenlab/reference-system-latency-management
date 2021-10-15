@@ -226,7 +226,7 @@ This directory should now hold tracing data and reports for all `ros2_tracing` t
 Additionally, CPU and Memory Usage tests generate data and reports and saves them to `$ROS_HOME/memory`.
 
 
-**PICAS Executor:**
+### PICAS Executor ###
 To build the [PICAS executor](https://github.com/rtenlab/ros2-picas), you can use the `PICAS` CMake variable:
 ```
 # build packages with the PICAS executor enabled
