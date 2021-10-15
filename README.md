@@ -102,8 +102,8 @@ Please go to the `README.md` file specific for the _reference system_ you would 
 
 - [Autoware Reference System](autoware_reference_system/README.md)
 
-**PICAS Executor:**
-Use `-DPICAS=TRUE` to build the [PICAS executor](https://github.com/rtenlab/ros2-picas). For more details, see `README.md` in [Autoware Reference System](autoware_reference_system/README.md).
+### PICAS Executor ###
+Use `-DPICAS=TRUE` to build the [PICAS executor](https://github.com/rtenlab/ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
 
 ## Contributing
 
