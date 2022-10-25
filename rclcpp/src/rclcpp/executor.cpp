@@ -894,6 +894,7 @@ Executor::get_next_ready_executable_from_map(
     memory_strategy_->get_next_waitable(any_executable, weak_groups_to_nodes);
     if (any_executable.waitable && highest_priority < any_executable.waitable->callback_priority) {
       highest_priority = any_executable.waitable->callback_priority;
+      any_executable.data = any_executable.waitable->take_data();
       any_executable.timer = nullptr;
       any_executable.subscription = nullptr;
       any_executable.service = nullptr;
