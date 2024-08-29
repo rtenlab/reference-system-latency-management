@@ -16,7 +16,8 @@
 
 #include <chrono>
 #include <string>
-
+#include <iostream>
+#include <sys/time.h>
 #include "rclcpp/rclcpp.hpp"
 #include "reference_system/nodes/settings.hpp"
 #include "reference_system/sample_management.hpp"
@@ -42,10 +43,15 @@ public:
   }
 
 private:
+  struct timeval c1, c2;
   void input_callback(const message_t::SharedPtr input_message)
   {
+    gettimeofday(&c1, NULL);
     uint32_t missed_samples = get_missed_samples_and_update_seq_nr(input_message, sequence_number_);
     print_sample_path(this->get_name(), missed_samples, input_message);
+    gettimeofday(&c2, NULL);
+    std::cout << "Command " << this->get_name() << ": " <<(c2.tv_sec - c1.tv_sec) * 1000000 + (c2.tv_usec - c1.tv_usec) << std::endl;
+
   }
 
 private:

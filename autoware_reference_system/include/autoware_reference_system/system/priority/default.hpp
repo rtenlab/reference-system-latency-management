@@ -41,8 +41,8 @@ namespace priority
     static constexpr int EUCLIDEAN_INTERSECTION_CALLBACK = 48;
     static constexpr int LANELET_2_GLOBAL_PLANNER_CALLBACK_1 = 29;
     static constexpr int LANELET_2_GLOBAL_PLANNER_CALLBACK_2 = 28;
-    static constexpr int LANELET_2_MAP_LOADER_CALLBACK_1 = 31;
-    static constexpr int LANELET_2_MAP_LOADER_CALLBACK_2 = 32;
+    static constexpr int LANELET_2_MAP_LOADER_CALLBACK_1 = 32; // modified
+    static constexpr int LANELET_2_MAP_LOADER_CALLBACK_2 = 31; //modified
     static constexpr int PARKING_PLANNER_CALLBACK = 33;
     static constexpr int LANE_PLANNER_CALLBACK = 34;
     static constexpr int OBJECT_COLLISION_ESTIMATOR_CALLBACK = 58;

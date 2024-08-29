@@ -17,7 +17,8 @@
 #include <string>
 #include <utility>
 #include <vector>
-
+#include <iostream>
+#include <sys/time.h>
 #include "rclcpp/rclcpp.hpp"
 #include "reference_system/nodes/settings.hpp"
 #include "reference_system/number_cruncher.hpp"
@@ -63,18 +64,23 @@ public:
   }
 
 private:
+  struct timeval c1, c2;
   void input_callback(
     const uint64_t input_number,
     const message_t::SharedPtr input_message)
   {
+    gettimeofday(&c1, NULL);
     subscriptions_[input_number].cache = input_message;
+    gettimeofday(&c2, NULL);
+    double time_diff = (c2.tv_sec - c1.tv_sec) * 1000000 + c2.tv_usec - c1.tv_usec;
+    std::cout << "Cyclic "  << this->get_name() << ": " << time_diff << std::endl;
   }
 
   void timer_callback()
   {
     uint64_t timestamp = now_as_int();
     auto number_cruncher_result = number_cruncher(number_crunch_limit_);
-
+gettimeofday(&c1, NULL);
     auto output_message = publisher_->borrow_loaned_message();
     output_message.get().size = 0;
 
@@ -93,6 +99,8 @@ private:
 
     output_message.get().data[0] = number_cruncher_result;
     publisher_->publish(std::move(output_message));
+    gettimeofday(&c2, NULL);
+    std::cout << "Cyclic "  << this->get_name() << "Timer: " << (c2.tv_sec - c1.tv_sec) * 1000000 + (c2.tv_usec - c1.tv_usec) << std::endl;
   }
 
 private:

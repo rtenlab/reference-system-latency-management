@@ -16,7 +16,8 @@
 #include <chrono>
 #include <string>
 #include <utility>
-
+#include <iostream>
+#include <sys/time.h>
 #include "rclcpp/rclcpp.hpp"
 #include "reference_system/nodes/settings.hpp"
 #include "reference_system/number_cruncher.hpp"
@@ -50,13 +51,20 @@ public:
   }
 
 private:
+  struct timeval c1, c2, c3, c4;
   void input_callback(
     const uint64_t input_number,
     const message_t::SharedPtr input_message)
   {
+gettimeofday(&c1, NULL);
     uint64_t timestamp = now_as_int();
     subscriptions_[input_number].cache = input_message;
-
+gettimeofday(&c2, NULL);
+    if(input_number != 0){
+      std::cout << "Fusion " << this->get_name() << ": " << (c2.tv_sec - c1.tv_sec) * 1000000 + (c2.tv_usec - c1.tv_usec) << std::endl;
+      volatile auto number_cruncher_result = number_cruncher(number_crunch_limit_/4); // 2ms delay
+      return;
+    }
     // only process and publish when we can perform an actual fusion, this means
     // we have received a sample from each subscription
     if (!subscriptions_[0].cache || !subscriptions_[1].cache) {
@@ -64,7 +72,7 @@ private:
     }
 
     auto number_cruncher_result = number_cruncher(number_crunch_limit_);
-
+gettimeofday(&c3, NULL);
     auto output_message = publisher_->borrow_loaned_message();
 
     uint32_t missed_samples = get_missed_samples_and_update_seq_nr(
@@ -84,9 +92,10 @@ private:
 
     output_message.get().data[0] = number_cruncher_result;
     publisher_->publish(std::move(output_message));
-
-    subscriptions_[0].cache.reset();
-    subscriptions_[1].cache.reset();
+gettimeofday(&c4, NULL);
+    std::cout << "Fusion " << this->get_name() << " Trigger: " << (c4.tv_sec - c3.tv_sec) * 1000000 + (c4.tv_usec - c3.tv_usec) + (c2.tv_sec - c1.tv_sec)*1000000 + (c2.tv_usec - c1.tv_usec)  << std::endl;
+    // subscriptions_[0].cache.reset();
+    // subscriptions_[1].cache.reset();
   }
 
 private:

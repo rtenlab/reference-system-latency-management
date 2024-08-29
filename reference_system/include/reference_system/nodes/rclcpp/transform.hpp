@@ -16,7 +16,8 @@
 #include <chrono>
 #include <string>
 #include <utility>
-
+#include <iostream>
+#include <sys/time.h>
 #include "rclcpp/rclcpp.hpp"
 #include "reference_system/nodes/settings.hpp"
 #include "reference_system/number_cruncher.hpp"
@@ -45,11 +46,12 @@ public:
   }
 
 private:
+struct timeval c1, c2;
   void input_callback(const message_t::SharedPtr input_message)
   {
     uint64_t timestamp = now_as_int();
     auto number_cruncher_result = number_cruncher(number_crunch_limit_);
-
+gettimeofday(&c1, NULL);
     auto output_message = publisher_->borrow_loaned_message();
     output_message.get().size = 0;
     merge_history_into_sample(output_message.get(), input_message);
@@ -65,6 +67,8 @@ private:
     // use result so that it is not optimizied away by some clever compiler
     output_message.get().data[0] = number_cruncher_result;
     publisher_->publish(std::move(output_message));
+gettimeofday(&c2, NULL);
+std::cout << "Transform "  << this->get_name() << ": " <<  (c2.tv_sec - c1.tv_sec) * 1000000 + (c2.tv_usec - c1.tv_usec) << std::endl;
   }
 
 private:

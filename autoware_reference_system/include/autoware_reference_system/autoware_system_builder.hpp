@@ -228,8 +228,8 @@ auto create_autoware_nodes()
     std::make_shared<typename SystemType::Fusion>(
       nodes::FusionSettings{
     .node_name = "NDTLocalizer",
-    .input_0 = "VoxelGridDownsampler",
-    .input_1 = "PointCloudMapLoader",
+    .input_0 = "PointCloudMapLoader", // modified
+    .input_1 = "VoxelGridDownsampler", //modified
     .output_topic = "NDTLocalizer",
     .number_crunch_limit = TimingConfig::NDT_LOCALIZER,
     #ifdef PICAS
