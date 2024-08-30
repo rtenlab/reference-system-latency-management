@@ -1,6 +1,6 @@
 # Overview
 
-A modified and analyzable version of the Autoware Reference system from [Apex.AI](https://apex.ai) and a modified version of rclcpp to inlcude automatic latency management for processing chains at the executor level. 
+A modified and analyzable version of the Autoware Reference system from [Apex.AI](https://apex.ai) and a modified version of default and picas-enabled rclcpp to inlcude automatic latency management for processing chains at the executor level. Uses ROS2 Humble as base ROS version.
 
 ![Node graph of reference-system-autoware](content/img/autoware_reference_system.svg)
 
@@ -85,7 +85,7 @@ The first reference system benchmark proposed is based on the *Autoware.Auto* li
                 - [Single Threaded](autoware_reference_system/src/ros2/executor/autoware_default_singlethreaded.cpp)
                 - [Static Single Threaded](autoware_reference_system/src/ros2/executor/autoware_default_staticsinglethreaded.cpp)
                 - [Multithreaded](autoware_reference_system/src/ros2/executor/autoware_default_multithreaded.cpp)
-                - [Multi-Single Threaded](autoware_reference_system/src/ros2/executor/autoware_default_multi_singlethreaded.cpp)
+                - [Multiple Single Threaded](autoware_reference_system/src/ros2/executor/autoware_default_multi_singlethreaded.cpp)
 
 ## Testing and Dependencies
 
@@ -99,6 +99,6 @@ Please go to the `README.md` file specific for the _reference system_ you would 
 Use `-DPICAS=TRUE` to build the [PICAS executor](https://github.com/rtenlab/ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
 
 ### Latency Management Executor
-Use `-DPICAS=TRUE` to build the [Latency Management executor](ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
+Use `-DLAME=TRUE` to build the [Latency Management executor](ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
 
 
