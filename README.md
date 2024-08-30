@@ -5,6 +5,11 @@ A modified and analyzable version of the Autoware Reference system from [Apex.AI
 ![Node graph of reference-system-autoware](content/img/autoware_reference_system.svg)
 
 Future _reference systems_ could be proposed that are more complex using the same basic node building blocks within the `reference_system` package.
+
+## Analyzable Chain Breakdown 
+The modified system breaks down into 13 analyzable chains as follows:
+![Chain breakdown of reference-system-autoware](content/img/chain_breakdown.svg)
+
 ## Reference System
 
 A _reference system_ is defined by:

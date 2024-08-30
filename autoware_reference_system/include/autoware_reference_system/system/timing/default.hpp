@@ -22,6 +22,7 @@ namespace timing
 
 struct Default
 {
+  static constexpr uint64_t DEFAULT_NUMBER_CRUNCHER_LIMIT = 123456;
   using time_t = std::chrono::nanoseconds;
   using milliseconds = std::chrono::milliseconds;
 
@@ -39,27 +40,27 @@ struct Default
   // to figure out what values to place here corresponding to the run_time
   // you would like to run each node for
   // processing
-  static constexpr uint64_t POINTS_TRANSFORMER_FRONT = 65536;
-  static constexpr uint64_t POINTS_TRANSFORMER_REAR = 65536;
-  static constexpr uint64_t VOXEL_GRID_DOWNSAMPLER = 65536;
-  static constexpr uint64_t POINT_CLOUD_MAP_LOADER = 65536;
-  static constexpr uint64_t RAY_GROUND_FILTER = 65536;
-  static constexpr uint64_t EUCLIDEAN_CLUSTER_DETECTOR = 65536;
-  static constexpr uint64_t EUCLIDEAN_INTERSECTION = 65536;
-  static constexpr uint64_t OBJECT_COLLISION_ESTIMATOR = 65536;
-  static constexpr uint64_t MPC_CONTROLLER = 65536;
-  static constexpr uint64_t PARKING_PLANNER = 65536;
-  static constexpr uint64_t LANE_PLANNER = 65536;
+  static constexpr uint64_t POINTS_TRANSFORMER_FRONT = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t POINTS_TRANSFORMER_REAR = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t VOXEL_GRID_DOWNSAMPLER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t POINT_CLOUD_MAP_LOADER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t RAY_GROUND_FILTER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t EUCLIDEAN_CLUSTER_DETECTOR = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t EUCLIDEAN_INTERSECTION = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t OBJECT_COLLISION_ESTIMATOR = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t MPC_CONTROLLER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t PARKING_PLANNER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t LANE_PLANNER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
 
   // fusion
-  static constexpr uint64_t POINT_CLOUD_FUSION = 65536;
-  static constexpr uint64_t NDT_LOCALIZER = 65536;
-  static constexpr uint64_t VEHICLE_INTERFACE = 65536;
-  static constexpr uint64_t LANELET_2_GLOBAL_PLANNER = 65536;
-  static constexpr uint64_t LANELET_2_MAP_LOADER = 65536;
+  static constexpr uint64_t POINT_CLOUD_FUSION = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t NDT_LOCALIZER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t VEHICLE_INTERFACE = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t LANELET_2_GLOBAL_PLANNER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
+  static constexpr uint64_t LANELET_2_MAP_LOADER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
 
   // cyclic
-  static constexpr uint64_t BEHAVIOR_PLANNER = 65536;
+  static constexpr uint64_t BEHAVIOR_PLANNER = DEFAULT_NUMBER_CRUNCHER_LIMIT;
   static constexpr time_t BEHAVIOR_PLANNER_CYCLE = milliseconds(100);
 };
 

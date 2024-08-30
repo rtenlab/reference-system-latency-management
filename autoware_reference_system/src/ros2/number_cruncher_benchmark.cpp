@@ -25,13 +25,29 @@ long double get_crunch_time_in_ms(const uint64_t maximum_number)
   return static_cast<long double>(
     std::chrono::nanoseconds(stop - start).count() / 1000000.0);
 }
-int main()
+int main(int argc, char ** argv)
 {
   long double crunch_time = 0.0;
   std::cout << "maximum_number     run time" << std::endl;
+  if (argc == 2) {
+    crunch_time = get_crunch_time_in_ms(std::stoull(argv[1]));
+    std::cout << std::setfill(' ') << std::setw(12) << argv[1] << "       " <<
+      crunch_time << "ms" << std::endl;
+      return 0;
+  }
+  else if (argc == 3){
+    for(uint64_t i = 0; i < std::stoull(argv[2]); i++){
+      crunch_time = get_crunch_time_in_ms(std::stoull(argv[1]));
+      std::cout << std::setfill(' ') << std::setw(12) << argv[1] << "       " <<
+        crunch_time << "ms" << std::endl;
+    }
+    return 0;
+  }
+
   for (uint64_t i = 64; crunch_time < 1000.0; i *= 2) {
     crunch_time = get_crunch_time_in_ms(i);
     std::cout << std::setfill(' ') << std::setw(12) << i << "       " <<
       crunch_time << "ms" << std::endl;
   }
+  return 0;
 }
