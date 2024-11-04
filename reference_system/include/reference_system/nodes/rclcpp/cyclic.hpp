@@ -63,6 +63,17 @@ public:
 #endif
   }
 
+  void set_affinity_timer(unsigned long affinity)
+  {
+  	timer_->callback_affinity = affinity;
+  }
+
+  void set_affinity_subscriptions(int index, unsigned long affinity)
+  {
+    if (index < 0 || index > 5) std::cout << "ERROR: Cyclic callback affinity (" << index << ", " << affinity << ")" << std::endl;
+    subscriptions_[index].subscription->callback_affinity = affinity;
+  }
+
 private:
   struct timeval c1, c2;
   void input_callback(

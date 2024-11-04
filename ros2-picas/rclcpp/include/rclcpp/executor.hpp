@@ -441,6 +441,15 @@ public:
   }
 
   RCLCPP_PUBLIC
+  void
+  set_callback_affinity(rclcpp::TimerBase::SharedPtr ptr, uint64_t affinity_mask)
+  {
+    if (!ptr) return;
+	if (!affinity_mask) return; // at least one thread should be selected
+    ptr->callback_affinity = affinity_mask;
+  }
+
+  RCLCPP_PUBLIC
   void 
   set_callback_priority(rclcpp::SubscriptionBase::SharedPtr ptr, int priority)
   {
@@ -460,10 +469,36 @@ public:
   }
 
   RCLCPP_PUBLIC
+  void 
+  set_callback_affinity(rclcpp::SubscriptionBase::SharedPtr ptr, uint64_t affinity_mask)
+  {
+    if (!ptr) return;
+	if (!affinity_mask) return; // at least one thread should be selected
+    ptr->callback_affinity = affinity_mask;
+ 
+    // There might be other waitables associated with the subscription
+    // (e.g., events, intra-process msgs; see NodeTopics::add_subscription() in node_topics.cpp)
+    auto intra_process_waitable = ptr->get_intra_process_waitable();
+    if (intra_process_waitable) {
+      intra_process_waitable->callback_affinity = affinity_mask;
+    }
+    for (auto & subscription_event : ptr->get_event_handlers()) {
+      subscription_event.second->callback_affinity = affinity_mask;
+    }
+  }
+
+  RCLCPP_PUBLIC
   void
   set_callback_priority(rclcpp::ServiceBase::SharedPtr ptr, int priority)
   {
     if (ptr) ptr->callback_priority = priority;
+  }
+
+  RCLCPP_PUBLIC
+  void
+  set_callback_affinity(rclcpp::ServiceBase::SharedPtr ptr, uint64_t affinity_mask)
+  {
+    if (ptr) ptr->callback_affinity = affinity_mask;
   }
 
   RCLCPP_PUBLIC
@@ -475,9 +510,22 @@ public:
 
   RCLCPP_PUBLIC
   void
+  set_callback_affinity(rclcpp::ClientBase::SharedPtr ptr, uint64_t affinity_mask)
+  {
+    if (ptr) ptr->callback_affinity = affinity_mask;
+  }
+
+  RCLCPP_PUBLIC
+  void
   set_callback_priority(rclcpp::Waitable::SharedPtr ptr, int priority)
   {
     if (ptr) ptr->callback_priority = priority;
+  }
+  RCLCPP_PUBLIC
+  void
+  set_callback_affinity(rclcpp::Waitable::SharedPtr ptr, uint64_t affinity_mask)
+  {
+    if (ptr) ptr->callback_affinity = affinity_mask;
   }
 #endif
 

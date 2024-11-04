@@ -26,6 +26,9 @@
 using rclcpp::executors::MultiThreadedExecutor;
 
 #ifdef PICAS
+extern thread_local size_t thread_id;
+extern thread_local bool is_rt_thread;
+
 #include <cerrno>
 static long int sched_setattr(pid_t pid, const struct sched_attr *attr, unsigned int flags)
 {
@@ -96,44 +99,45 @@ MultiThreadedExecutor::get_number_of_threads()
   return number_of_threads_;
 }
 
-#ifdef PICAS
 void
-MultiThreadedExecutor::run(size_t thread_id)
+MultiThreadedExecutor::run(size_t this_thread_number)
 {
-  if (cpus.size() > 0 && cpus.size() <= thread_id) {
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MultiThreadedExecutor: spin: Thread %lu (PID %ld): no CPU assigned", thread_id, gettid());
-  }
-  else {
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MultiThreadedExecutor: spin: Thread %lu (PID %ld) on CPU %d", thread_id, gettid(), cpus[thread_id]);
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpus[thread_id], &cpuset);
-    if(pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset)) {
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MultiThreadedExecutor: spin: Thread %lu: spin_cpu has an error", thread_id);
+  (void)this_thread_number;
+#ifdef PICAS
+  thread_id = (int)this_thread_number;
+  if (cpus.size() > 0) {
+    if (cpus.size() <= thread_id) {
+      PICAS_INFO("MultiThreadedExecutor: spin: Thread %lu (PID %ld): no CPU assigned", thread_id, gettid());
+    }
+    else {
+      PICAS_INFO("MultiThreadedExecutor: spin: Thread %lu (PID %ld) on CPU %d", thread_id, gettid(), cpus[thread_id]);
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(cpus[thread_id], &cpuset);
+      if(pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset)) {
+          RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MultiThreadedExecutor: spin: Thread %lu: spin_cpu has an error", thread_id);
+      }
     }
   }
   if (rt_attr.sched_policy != 0) {
     long int ret;
     unsigned int flags = 0;
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MultiThreadedExecutor: spin: Thread %lu (PID %ld) %s prio %d", thread_id, gettid(), 
+    PICAS_INFO("MultiThreadedExecutor: spin: Thread %lu (PID %ld) %s prio %d", thread_id, gettid(), 
       rt_attr.sched_policy == SCHED_FIFO ? "FIFO" : rt_attr.sched_policy == SCHED_RR ? "RR" : rt_attr.sched_policy == SCHED_DEADLINE ? "DEADLINE" : "N/A",
       rt_attr.sched_priority);
     ret = sched_setattr(0, &rt_attr, flags);
     if (ret < 0) {
-      RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "MultiThreadedExecutor: spin: Thread %lu: sched_setattr has an error (%s)", thread_id, strerror(errno));
+      PICAS_INFO("MultiThreadedExecutor: spin: Thread %lu: sched_setattr has an error (%s)", thread_id, strerror(errno));
     }
   }
-#else
-void
-MultiThreadedExecutor::run(size_t this_thread_number)
-{
-  (void)this_thread_number;
 #endif
   //(void)this_thread_number; // comment out this line, couldn't find usage of it
   while (rclcpp::ok(this->context_) && spinning.load()) {
     rclcpp::AnyExecutable any_exec;
     {
+      PICAS_INFO("[run] thread %lu", thread_id);
       std::lock_guard wait_lock{wait_mutex_};
+      PICAS_INFO("[run] thread %lu - lock acquired", thread_id);
       if (!rclcpp::ok(this->context_) || !spinning.load()) {
         return;
       }

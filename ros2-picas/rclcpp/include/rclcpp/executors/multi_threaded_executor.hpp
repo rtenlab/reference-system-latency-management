@@ -28,7 +28,7 @@
 #include "rclcpp/visibility_control.hpp"
 
 #ifdef PICAS
-#include <rclcpp/cb_sched.hpp>
+#include <rclcpp/picas.hpp>
 #include <unistd.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -116,7 +116,11 @@ protected:
 private:
   RCLCPP_DISABLE_COPY(MultiThreadedExecutor)
 
+#ifdef PICAS_THREAD_AFFINITY
+  priority_mutex wait_mutex_;
+#else
   std::mutex wait_mutex_;
+#endif
   size_t number_of_threads_;
   bool yield_before_execute_;
   std::chrono::nanoseconds next_exec_timeout_;

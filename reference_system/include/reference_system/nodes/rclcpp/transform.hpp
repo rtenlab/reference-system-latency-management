@@ -45,6 +45,11 @@ public:
 #endif
   }
 
+  void set_affinity_subscription(unsigned long affinity)
+  {
+    subscription_->callback_affinity = affinity;
+  }
+
 private:
 struct timeval c1, c2;
   void input_callback(const message_t::SharedPtr input_message)

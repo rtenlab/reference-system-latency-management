@@ -50,6 +50,12 @@ public:
 #endif
   }
 
+  void set_affinity_subscriptions(int index, unsigned long affinity)
+  {
+    if (index < 0 || index > 1) std::cout << "ERROR: Fusion callback affinity (" << index << ", " << affinity << ")" << std::endl;
+    subscriptions_[index].subscription->callback_affinity = affinity;
+  }
+
 private:
   struct timeval c1, c2, c3, c4;
   void input_callback(

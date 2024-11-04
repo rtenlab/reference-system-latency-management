@@ -23,6 +23,11 @@
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
+  //int n_threads = std::thread::hardware_concurrency();
+  int n_threads = 4; // default
+  if (argc >= 2) {
+  	n_threads = atoi(argv[1]);
+  }
 
   using TimeConfig = nodes::timing::Default;
   // uncomment for benchmarking
@@ -31,7 +36,8 @@ int main(int argc, char * argv[])
 
   auto nodes = create_autoware_nodes<RclcppSystem, TimeConfig>();
 
-  rclcpp::executors::MultiThreadedExecutor executor;
+  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), n_threads);
+
   for (auto & node : nodes) {
     executor.add_node(node);
   }

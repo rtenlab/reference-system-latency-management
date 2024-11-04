@@ -36,9 +36,19 @@
 #include "tracetools/tracetools.h"
 
 #ifdef PICAS
-#include <rclcpp/cb_sched.hpp>
+#include <rclcpp/picas.hpp>
 #include "rclcpp/memory_strategy.hpp"
 using rclcpp::memory_strategy::MemoryStrategy;
+
+thread_local size_t thread_id = 0;
+thread_local bool is_rt_thread = false;
+
+#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
+atomic_bitmask idle_thread_mask;
+uint64_t waitset_thread_mask; // accessed with lock; atomic not needed
+struct timespec waitset_update_time;
+thread_local struct timespec idle_start_time = {0, 0};
+#endif
 #endif
 
 using namespace std::chrono_literals;
@@ -515,45 +525,36 @@ void
 Executor::execute_any_executable(AnyExecutable & any_exec)
 {
   if (!spinning.load()) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "execute callback, but there isn't a spinning load.");    
-  #endif
     return;
   }
+#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
+  // Callback execution begins. Thread is now busy.
+  idle_thread_mask.clear_flag(1 << thread_id);
+#endif
   if (any_exec.timer) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "execute callback [timer callback].");    
-  #endif
+    PICAS_INFO("[execute_any_executable] thread %lu begin timer", thread_id);
     TRACEPOINT(
       rclcpp_executor_execute,
       static_cast<const void *>(any_exec.timer->get_timer_handle().get()));
     execute_timer(any_exec.timer);
   }
   if (any_exec.subscription) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "execute callback [subscription callback].");    
-  #endif
+    PICAS_INFO("[execute_any_executable] thread %lu begin subscription", thread_id);
     TRACEPOINT(
       rclcpp_executor_execute,
       static_cast<const void *>(any_exec.subscription->get_subscription_handle().get()));
     execute_subscription(any_exec.subscription);
   }
   if (any_exec.service) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "execute callback [service callback].");    
-  #endif
+    PICAS_INFO("[execute_any_executable] thread %lu begin service", thread_id);
     execute_service(any_exec.service);
   }
   if (any_exec.client) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "execute callback [client callback].");    
-  #endif
+    PICAS_INFO("[execute_any_executable] thread %lu begin client", thread_id);
     execute_client(any_exec.client);
   }
   if (any_exec.waitable) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "execute callback [waitable callback].");    
-  #endif
+    PICAS_INFO("[execute_any_executable] thread %lu begin waitable", thread_id);
     any_exec.waitable->execute(any_exec.data);
   }
   // Reset the callback_group, regardless of type
@@ -567,6 +568,13 @@ Executor::execute_any_executable(AnyExecutable & any_exec)
             std::string(
               "Failed to trigger guard condition from execute_any_executable: ") + ex.what());
   }
+#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
+  // Callback execution is done. Thread is now idle. 
+  // ROS has waken up the wait (above code). So waitset can be immediately updated for the current thread's callbacks.
+  clock_gettime(CLOCK_MONOTONIC, &idle_start_time);
+  idle_thread_mask.set_flag(1 << thread_id);
+  PICAS_INFO("[execute_any_executable] thread %lu complete (idle_threads %lx)", thread_id, idle_thread_mask.get_flag());
+#endif
 }
 
 static
@@ -860,6 +868,7 @@ Executor::get_next_ready_executable_from_map(
 {
   TRACEPOINT(rclcpp_executor_get_next_ready);
   bool success = false;
+  std::lock_guard<std::mutex> guard{mutex_};
 
 #ifdef PICAS
   // PiCAS
@@ -911,9 +920,6 @@ Executor::get_next_ready_executable_from_map(
     if (highest_priority >= 0) success = true;
   } else {
 #endif
-
-
-  std::lock_guard<std::mutex> guard{mutex_};
   // Check the timers to see if there are any that are ready
   memory_strategy_->get_next_timer(any_executable, weak_groups_to_nodes);
   if (any_executable.timer) {
@@ -987,16 +993,19 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   // TODO(wjwwood): improve run to run efficiency of this function
 
 #ifdef PICAS
+  #ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
+  if (!(idle_thread_mask.get_flag() & (1 << thread_id))) idle_thread_mask.set_flag(1 << thread_id); // needed only once per thread
+  PICAS_INFO("[get_next_executable] thread %lu (idle_threads %lx)", thread_id, idle_thread_mask.get_flag());
+  #endif
+
   if (callback_priority_enabled == false) {
-  #ifdef PICAS_DEBUG
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "[get_next_executable] Begin. Call get_next_ready_executable().");
-  #endif 
+    // If callback priority is not enabled, get a callback directly without updating wait-set
+    // Otherwise, call wait_for_work() to update wait-set and then get a ready callback
+    success = get_next_ready_executable(any_executable);
 
-  success = get_next_ready_executable(any_executable);
-
-  #ifdef PICAS_DEBUG
-    if (success) print_list_ready_executable(any_executable);
-  #endif 
+  //#ifdef PICAS_DEBUG
+  //  if (success) print_list_ready_executable(any_executable);
+  //#endif 
   }
 #else
   success = get_next_ready_executable(any_executable);
@@ -1005,31 +1014,60 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   // If there are none
   if (!success) {
     // Wait for subscriptions or timers to work on
-  
-  #ifdef PICAS_DEBUG
-    timeval ctime, ftime;
-    double elapsed_time;
-    gettimeofday(&ctime, NULL);
-  #endif
 
+#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
+    // wait_for_work() can be bypassed if:
+    //   1) waitset's update time is newer than the thread's idle start time, and
+    //   2) waitset considered the current task (thread_mask includes the current task)
+    if (is_timespec_greater(waitset_update_time, idle_start_time) && (waitset_thread_mask & (1 << thread_id))) {
+      success = get_next_ready_executable(any_executable);
+    }
+    if (!success) {
+      //#ifdef PICAS_DEBUG
+      //timeval ctime, ftime;
+      //double elapsed_time;
+      //gettimeofday(&ctime, NULL);
+      //#endif
+
+      waitset_thread_mask = idle_thread_mask.get_flag(); // keep the current value of idle_thread_mask
+      PICAS_INFO("[wait_for_work] thread %lu wait (waitset_threads %lx)", thread_id, waitset_thread_mask);
+
+      wait_for_work(timeout);
+
+      clock_gettime(CLOCK_MONOTONIC, &waitset_update_time);
+      PICAS_INFO("[wait_for_work] thread %lu wakeup (waitset_threads %lx)", thread_id, waitset_thread_mask);
+
+      //#ifdef PICAS_DEBUG
+      //gettimeofday(&ftime, NULL);
+      //elapsed_time = (double)(ftime.tv_sec - ctime.tv_sec) * 1.0;
+      //elapsed_time += (double)(ftime.tv_usec - ctime.tv_usec) / 1000000.0;
+      //PICAS_INFO("[get_next_executable] Elaspsed time for wait_for_work is %f", elapsed_time);    
+      //#endif
+
+      if (!spinning.load()) {
+        return false;
+      }
+      // Try again
+      success = get_next_ready_executable(any_executable);
+    }
+#else
     wait_for_work(timeout);
-  
-  #ifdef PICAS_DEBUG
-    gettimeofday(&ftime, NULL);
-    elapsed_time = (ftime.tv_sec - ctime.tv_sec) * 1.0;
-    elapsed_time += (ftime.tv_usec - ctime.tv_usec) / 1000000.0;
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "[get_next_executable] Elaspsed time for wait_for_work is %f", elapsed_time);    
-  #endif
 
     if (!spinning.load()) {
       return false;
     }
     // Try again
     success = get_next_ready_executable(any_executable);
-#ifdef PICAS_DEBUG
-    if (success) print_list_ready_executable(any_executable);
 #endif
   }
+
+#ifdef PICAS_THREAD_AFFINITY
+  //#ifdef PICAS_DEBUG
+  //if (success) print_list_ready_executable(any_executable);
+  //#endif
+  PICAS_INFO("[get_next_executable] thread %lu return %d (idle_threads %lx)", thread_id, success, idle_thread_mask.get_flag());
+#endif
+
   return success;
 }
 
@@ -1043,8 +1081,8 @@ Executor::print_list_ready_executable(AnyExecutable & any_executable) {
   if (any_executable.timer) {
     //auto group = get_group_by_timer(any_executable.timer, weak_nodes_);
     //auto node = get_node_by_group(group, weak_nodes_);
-    //RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Timer callback of node (%s) is on executable queue at %ld", node.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "[print_list_ready_executable] A timer callback is on executable queue at %ld", ctime.tv_sec*1000+ctime.tv_usec/1000);    
+    //PICAS_INFO("Timer callback of node (%s) is on executable queue at %ld", node.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
+    PICAS_INFO("[print_list_ready_executable] A timer callback is on executable queue at %ld", ctime.tv_sec*1000+ctime.tv_usec/1000);    
     /*
     if (any_executable.timer.get()->is_ready()) {
       RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Timer callback of node (%s) is ready at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
@@ -1055,22 +1093,22 @@ Executor::print_list_ready_executable(AnyExecutable & any_executable) {
   }
 
   if (any_executable.subscription != NULL) {
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Subscription callback of node (%s) is on executable queue at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
+    PICAS_INFO("Subscription callback of node (%s) is on executable queue at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
   }
 
   if (any_executable.service != NULL) {
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Service callback of node (%s) is on executable queue at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
+    PICAS_INFO("Service callback of node (%s) is on executable queue at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
   }
 
   if (any_executable.client != NULL) {
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Client callback of node (%s) is on executable queue at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
+    PICAS_INFO("Client callback of node (%s) is on executable queue at %ld", any_executable.node_base.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
   }
 
   if (any_executable.waitable != NULL) {
     //auto group = get_group_by_waitable(any_executable.waitable, weak_nodes_);
     //auto node = get_node_by_group(group, weak_nodes_);
     //RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Waitable callback of node (%s) is on executable queue at %ld", node.get()->get_name(), ctime.tv_sec*1000+ctime.tv_usec/1000);    
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "[print_list_ready_executable] A waitable callback is on executable queue at %ld", ctime.tv_sec*1000+ctime.tv_usec/1000);    
+    PICAS_INFO("[print_list_ready_executable] A waitable callback is on executable queue at %ld", ctime.tv_sec*1000+ctime.tv_usec/1000);    
   }
   
 }

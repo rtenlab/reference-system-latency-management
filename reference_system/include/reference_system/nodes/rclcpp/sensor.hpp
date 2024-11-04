@@ -43,6 +43,11 @@ public:
 #endif
   }
 
+  void set_affinity_timer(unsigned long affinity)
+  {
+    timer_->callback_affinity = affinity;
+  }
+
 private:
   struct timeval c1, c2;
   void timer_callback()

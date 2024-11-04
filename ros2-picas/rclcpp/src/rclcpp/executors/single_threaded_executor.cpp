@@ -45,7 +45,7 @@ SingleThreadedExecutor::spin()
 }
 
 #ifdef PICAS
-#include <rclcpp/cb_sched.hpp>
+#include <rclcpp/picas.hpp>
 #include <unistd.h>
 #include <sys/types.h>
 #include <errno.h>

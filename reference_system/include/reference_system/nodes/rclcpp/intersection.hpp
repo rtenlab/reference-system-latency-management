@@ -54,6 +54,12 @@ public:
 #endif
   }
 
+  void set_affinity_subscriptions(int index, unsigned long affinity)
+  {
+    if (index < 0 || index > 1) std::cout << "ERROR: Intersection callback affinity (" << index << ", " << affinity << ")" << std::endl;
+    connections_[index].subscription->callback_affinity = affinity;
+  }
+
 private:
 struct timeval c1, c2;
   void input_callback(const message_t::SharedPtr input_message, const uint64_t id)

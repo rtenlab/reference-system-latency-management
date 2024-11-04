@@ -22,7 +22,7 @@ namespace timing
 
 struct Default
 {
-  static constexpr uint64_t DEFAULT_NUMBER_CRUNCHER_LIMIT = 123456;
+  static constexpr uint64_t DEFAULT_NUMBER_CRUNCHER_LIMIT = 65536;
   using time_t = std::chrono::nanoseconds;
   using milliseconds = std::chrono::milliseconds;
 
