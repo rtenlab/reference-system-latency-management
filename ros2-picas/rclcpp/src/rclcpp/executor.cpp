@@ -41,7 +41,9 @@
 using rclcpp::memory_strategy::MemoryStrategy;
 
 thread_local size_t thread_id = 0;
-thread_local bool is_rt_thread = false;
+// is_rt_thread: enable_callback_priority will be ignored by the thread 
+// (falls back to the default ROS scheduling) if this flag is set. 
+thread_local bool is_rt_thread = true;
 
 #ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
 atomic_bitmask idle_thread_mask;
@@ -532,29 +534,29 @@ Executor::execute_any_executable(AnyExecutable & any_exec)
   idle_thread_mask.clear_flag(1 << thread_id);
 #endif
   if (any_exec.timer) {
-    PICAS_INFO("[execute_any_executable] thread %lu begin timer", thread_id);
+    PICAS_INFO("[execute_any_executable] thread %lu (rt:%d) begin timer", thread_id, is_rt_thread);
     TRACEPOINT(
       rclcpp_executor_execute,
       static_cast<const void *>(any_exec.timer->get_timer_handle().get()));
     execute_timer(any_exec.timer);
   }
   if (any_exec.subscription) {
-    PICAS_INFO("[execute_any_executable] thread %lu begin subscription", thread_id);
+    PICAS_INFO("[execute_any_executable] thread %lu (rt:%d) begin subscription", thread_id, is_rt_thread);
     TRACEPOINT(
       rclcpp_executor_execute,
       static_cast<const void *>(any_exec.subscription->get_subscription_handle().get()));
     execute_subscription(any_exec.subscription);
   }
   if (any_exec.service) {
-    PICAS_INFO("[execute_any_executable] thread %lu begin service", thread_id);
+    PICAS_INFO("[execute_any_executable] thread %lu (rt:%d) begin service", thread_id, is_rt_thread);
     execute_service(any_exec.service);
   }
   if (any_exec.client) {
-    PICAS_INFO("[execute_any_executable] thread %lu begin client", thread_id);
+    PICAS_INFO("[execute_any_executable] thread %lu (rt:%d) begin client", thread_id, is_rt_thread);
     execute_client(any_exec.client);
   }
   if (any_exec.waitable) {
-    PICAS_INFO("[execute_any_executable] thread %lu begin waitable", thread_id);
+    PICAS_INFO("[execute_any_executable] thread %lu (rt:%d) begin waitable", thread_id, is_rt_thread);
     any_exec.waitable->execute(any_exec.data);
   }
   // Reset the callback_group, regardless of type
@@ -872,7 +874,7 @@ Executor::get_next_ready_executable_from_map(
 
 #ifdef PICAS
   // PiCAS
-  if (callback_priority_enabled) {
+  if (callback_priority_enabled && is_rt_thread) {
     // Check timers/subscriptions/services/clients/waitables and 
     // keep only the highest-priority one
     int highest_priority = -1;
@@ -998,14 +1000,14 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   PICAS_INFO("[get_next_executable] thread %lu (idle_threads %lx)", thread_id, idle_thread_mask.get_flag());
   #endif
 
-  if (callback_priority_enabled == false) {
+  if (callback_priority_enabled == false || is_rt_thread == false) {
     // If callback priority is not enabled, get a callback directly without updating wait-set
     // Otherwise, call wait_for_work() to update wait-set and then get a ready callback
     success = get_next_ready_executable(any_executable);
 
-  //#ifdef PICAS_DEBUG
-  //  if (success) print_list_ready_executable(any_executable);
-  //#endif 
+    //#ifdef PICAS_DEBUG
+    //if (success) print_list_ready_executable(any_executable);
+    //#endif 
   }
 #else
   success = get_next_ready_executable(any_executable);
@@ -1051,7 +1053,9 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
       success = get_next_ready_executable(any_executable);
     }
 #else
+    PICAS_INFO("[wait_for_work] thread %lu wait", thread_id);
     wait_for_work(timeout);
+    PICAS_INFO("[wait_for_work] thread %lu wakeup", thread_id);
 
     if (!spinning.load()) {
       return false;
@@ -1065,11 +1069,22 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   //#ifdef PICAS_DEBUG
   //if (success) print_list_ready_executable(any_executable);
   //#endif
+  #ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
   PICAS_INFO("[get_next_executable] thread %lu return %d (idle_threads %lx)", thread_id, success, idle_thread_mask.get_flag());
+  #endif
 #endif
 
   return success;
 }
+
+#ifdef PICAS_THREAD_AFFINITY
+void Executor::update_active_threads(uint64_t active_thread_mask_)
+{
+  std::lock_guard<std::mutex> lock(thread_sync_mutex);
+  active_thread_mask = active_thread_mask_;
+  thread_sync_cv.notify_all();
+}
+#endif
 
 #ifdef PICAS_DEBUG
 void

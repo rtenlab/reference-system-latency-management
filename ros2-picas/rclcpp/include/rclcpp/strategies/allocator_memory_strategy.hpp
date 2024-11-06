@@ -298,7 +298,7 @@ public:
 
 #ifdef PICAS
         // PiCAS: choose the highest-priority callback 
-        if (callback_priority_enabled) {
+        if (callback_priority_enabled && is_rt_thread) {
 #ifdef PICAS_THREAD_AFFINITY
           if (subscription->callback_affinity & (1 << thread_id))
 #endif
@@ -311,13 +311,18 @@ public:
             }
           }
         } else {
-          // Otherwise it is safe to set and return the any_exec
-          any_exec.subscription = subscription;
-          any_exec.callback_group = group;
-          any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
-          subscription_handles_.erase(it);
-          //PICAS_INFO("[get_next_subscription found (node name: %s)", any_exec.node_base->get_name());
-          return;
+#ifdef PICAS_THREAD_AFFINITY
+          if (subscription->callback_affinity & (1 << thread_id))
+#endif
+          {
+            // Otherwise it is safe to set and return the any_exec
+            any_exec.subscription = subscription;
+            any_exec.callback_group = group;
+            any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
+            subscription_handles_.erase(it);
+            //PICAS_INFO("[get_next_subscription found (node name: %s)", any_exec.node_base->get_name());
+            return;
+          }
         }
 #else
         // Otherwise it is safe to set and return the any_exec
@@ -369,7 +374,7 @@ public:
   
 #ifdef PICAS
         // PiCAS: choose the highest-priority callback 
-        if (callback_priority_enabled) {
+        if (callback_priority_enabled && is_rt_thread) {
 #ifdef PICAS_THREAD_AFFINITY
           if (service->callback_affinity & (1 << thread_id))
 #endif
@@ -382,13 +387,18 @@ public:
             }
           }
         } else {
-          // Otherwise it is safe to set and return the any_exec
-          any_exec.service = service;
-          any_exec.callback_group = group;
-          any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
-          service_handles_.erase(it);
-          //PICAS_INFO("[get_next_service] found (node name: %s)", any_exec.node_base->get_name());
-          return;
+#ifdef PICAS_THREAD_AFFINITY
+          if (service->callback_affinity & (1 << thread_id))
+#endif
+          {
+            // Otherwise it is safe to set and return the any_exec
+            any_exec.service = service;
+            any_exec.callback_group = group;
+            any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
+            service_handles_.erase(it);
+            //PICAS_INFO("[get_next_service] found (node name: %s)", any_exec.node_base->get_name());
+            return;
+          }
         }
 #else
         // Otherwise it is safe to set and return the any_exec
@@ -440,7 +450,7 @@ public:
         }
 #ifdef PICAS
         // PiCAS: choose the highest-priority callback 
-        if (callback_priority_enabled) {
+        if (callback_priority_enabled && is_rt_thread) {
 #ifdef PICAS_THREAD_AFFINITY
           if (client->callback_affinity & (1 << thread_id)) 
 #endif
@@ -453,13 +463,18 @@ public:
             }
           }
         } else {
-          // Otherwise it is safe to set and return the any_exec
-          any_exec.client = client;
-          any_exec.callback_group = group;
-          any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
-          client_handles_.erase(it);
-          //PICAS_INFO("[get_next_client] found (node name: %s)", any_exec.node_base->get_name());
-          return;
+#ifdef PICAS_THREAD_AFFINITY
+          if (client->callback_affinity & (1 << thread_id)) 
+#endif
+          {
+            // Otherwise it is safe to set and return the any_exec
+            any_exec.client = client;
+            any_exec.callback_group = group;
+            any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
+            client_handles_.erase(it);
+            //PICAS_INFO("[get_next_client] found (node name: %s)", any_exec.node_base->get_name());
+            return;
+          }
         }
 #else
         // Otherwise it is safe to set and return the any_exec
@@ -517,7 +532,7 @@ public:
 
 #ifdef PICAS
         // PiCAS: choose the highest-priority callback 
-        if (callback_priority_enabled) {
+        if (callback_priority_enabled && is_rt_thread) {
 #ifdef PICAS_THREAD_AFFINITY
           if (timer->callback_affinity & (1 << thread_id)) 
 #endif
@@ -530,13 +545,18 @@ public:
             }
           }
         } else {
-          // Otherwise it is safe to set and return the any_exec
-          any_exec.timer = timer;
-          any_exec.callback_group = group;
-          any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
-          timer_handles_.erase(it);
-          //PICAS_INFO("[get_next_timer] found (node name: %s)", any_exec.node_base->get_name());
-          return;
+#ifdef PICAS_THREAD_AFFINITY
+          if (timer->callback_affinity & (1 << thread_id)) 
+#endif
+          {
+            // Otherwise it is safe to set and return the any_exec
+            any_exec.timer = timer;
+            any_exec.callback_group = group;
+            any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
+            timer_handles_.erase(it);
+            //PICAS_INFO("[get_next_timer] found (node name: %s)", any_exec.node_base->get_name());
+            return;
+          }
         }
 #else
         // Otherwise it is safe to set and return the any_exec
@@ -590,7 +610,7 @@ public:
 
 #ifdef PICAS
         // PiCAS: choose the highest-priority callback 
-        if (callback_priority_enabled) {
+        if (callback_priority_enabled && is_rt_thread) {
 #ifdef PICAS_THREAD_AFFINITY
           if (waitable->callback_affinity & (1 << thread_id)) 
 #endif
@@ -603,13 +623,18 @@ public:
             }
           }
         } else {
-          // Otherwise it is safe to set and return the any_exec
-          any_exec.waitable = waitable;
-          any_exec.callback_group = group;
-          any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
-          waitable_handles_.erase(it);
-          //PICAS_INFO("[get_next_waitable] found (node name: %s)", any_exec.node_base->get_name());
-          return;
+#ifdef PICAS_THREAD_AFFINITY
+          if (waitable->callback_affinity & (1 << thread_id)) 
+#endif
+          {
+            // Otherwise it is safe to set and return the any_exec
+            any_exec.waitable = waitable;
+            any_exec.callback_group = group;
+            any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
+            waitable_handles_.erase(it);
+            //PICAS_INFO("[get_next_waitable] found (node name: %s)", any_exec.node_base->get_name());
+            return;
+          }
         }
 #else
         // Otherwise it is safe to set and return the any_exec

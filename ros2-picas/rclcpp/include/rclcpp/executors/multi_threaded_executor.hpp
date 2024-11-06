@@ -106,6 +106,7 @@ public:
 #ifdef PICAS
   std::vector<int> cpus;
   struct sched_attr rt_attr;
+  std::vector<bool> rt_threads;
 #endif
 
 protected:
@@ -117,7 +118,7 @@ private:
   RCLCPP_DISABLE_COPY(MultiThreadedExecutor)
 
 #ifdef PICAS_THREAD_AFFINITY
-  priority_mutex wait_mutex_;
+  ordered_mutex wait_mutex_;
 #else
   std::mutex wait_mutex_;
 #endif

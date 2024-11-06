@@ -46,6 +46,8 @@ int main(int argc, char * argv[])
   executor.cpus = {1, 3, 5, 7, 9, 11, 13, 15};
   //executor.rt_attr.sched_policy = SCHED_FIFO;
   //executor.rt_attr.sched_priority = 80;
+  executor.rt_threads.resize(8, false);
+  executor.rt_threads[0] = true;
   
   // SCHED_DEADLINE (by default, Linux doesn't allow SCHED_DEADLINE with CPU affinity)
   //executor.cpus.clear();
@@ -122,6 +124,8 @@ int main(int argc, char * argv[])
     else {
       std::cout << "UNKNOWN: " << node->get_name() << std::endl;
     }
+    // IMPORTANT: notify which threads are active
+    executor.update_active_threads(affinity); 
   }
   executor.spin();
 

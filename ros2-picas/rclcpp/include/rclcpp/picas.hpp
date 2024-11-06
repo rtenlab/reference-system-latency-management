@@ -2,6 +2,7 @@
 #define RCLCPP__CB_SCHED_HPP_
 
 //#define PICAS_DEBUG // comment this out for non-debug mode
+
 #define PICAS_THREAD_AFFINITY
 //#define PICAS_THREAD_AFFINITY_EXPERIMENTAL // complex, but not performing well...
 
@@ -55,7 +56,8 @@ static inline bool is_timespec_equal(struct timespec &t1, struct timespec &t2)
 extern thread_local size_t thread_id;
 extern thread_local bool is_rt_thread;
 
-class priority_mutex {
+#if 0
+class ordered_mutex {
   std::mutex mutex_;
   std::condition_variable cv_;
   bool locked_ = false;
@@ -79,7 +81,7 @@ public:
 
   void lock() {
     std::unique_lock<std::mutex> lock(mutex_);
-    PICAS_INFO("lock (%lu)", thread_id);
+    //PICAS_INFO("lock (%lu)", thread_id);
 
     if (locked_ || !rt_wait_queue_.empty() || (!be_wait_queue_.empty() && !is_rt_thread)) {
       if (is_rt_thread) {
@@ -87,7 +89,7 @@ public:
         while (locked_ || rt_wait_queue_.front() != thread_id) {
           cv_.wait(lock);
         }
-        PICAS_INFO("lock wait (winner: %lu): %s", thread_id, queue_to_string(rt_wait_queue_).c_str());
+        //PICAS_INFO("lock wait (winner: %lu): %s", thread_id, queue_to_string(rt_wait_queue_).c_str());
         rt_wait_queue_.pop();
       }
       else {
@@ -95,20 +97,64 @@ public:
         while (locked_ || be_wait_queue_.front() != thread_id) {
           cv_.wait(lock);
         }
-        PICAS_INFO("lock wait (winner: %lu): %s", thread_id, queue_to_string(be_wait_queue_).c_str());
+        //PICAS_INFO("lock wait (winner: %lu): %s", thread_id, queue_to_string(be_wait_queue_).c_str());
         be_wait_queue_.pop();
       }
     }
     else {
-      PICAS_INFO("lock no wait (winner: %lu): %s", thread_id, queue_to_string(be_wait_queue_).c_str());
+      //PICAS_INFO("lock no wait (winner: %lu): %s", thread_id, queue_to_string(be_wait_queue_).c_str());
     }
     locked_ = true;
   }
 
   void unlock() {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     locked_ = false;
-    PICAS_INFO("unlock (%lu)", thread_id);
+    //PICAS_INFO("unlock (%lu)", thread_id);
+    cv_.notify_all();
+  }
+};
+#endif
+
+class ordered_mutex {
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool locked_ = false;
+  std::queue<size_t> wait_queue_;
+
+public:
+  static std::string queue_to_string(std::queue<size_t> q) {
+    std::stringstream ss;
+    ss << "[";
+    bool first = true;
+    while (!q.empty()) {
+      if (!first) ss << ",";
+      ss << q.front();
+      q.pop();
+      first = false;
+    }
+    ss << "]";
+    return ss.str();
+  }
+
+  void lock() {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    if (locked_ || !wait_queue_.empty()) {
+      wait_queue_.push(thread_id);
+      while (locked_ || wait_queue_.front() != thread_id) {
+        cv_.wait(lock);
+      }
+      wait_queue_.pop();
+    }
+    else {
+    }
+    locked_ = true;
+  }
+
+  void unlock() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    locked_ = false;
     cv_.notify_all();
   }
 };

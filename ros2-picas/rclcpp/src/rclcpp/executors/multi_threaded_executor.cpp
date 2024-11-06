@@ -39,6 +39,7 @@ static long int sched_setattr(pid_t pid, const struct sched_attr *attr, unsigned
 //{
 //  return syscall(__NR_sched_getattr, pid, attr, size, flags);
 //}
+
 #endif
 
 MultiThreadedExecutor::MultiThreadedExecutor(
@@ -130,10 +131,23 @@ MultiThreadedExecutor::run(size_t this_thread_number)
       PICAS_INFO("MultiThreadedExecutor: spin: Thread %lu: sched_setattr has an error (%s)", thread_id, strerror(errno));
     }
   }
+  // RT threads: Update is_rt_threads if RT/BE thread information was provided 
+  // when the executor was created. (by default, all threads are RT threads)
+  if (rt_threads.size() > thread_id) {
+    is_rt_thread = rt_threads[thread_id];
+  }
 #endif
-  //(void)this_thread_number; // comment out this line, couldn't find usage of it
+
   while (rclcpp::ok(this->context_) && spinning.load()) {
     rclcpp::AnyExecutable any_exec;
+
+#ifdef PICAS_THREAD_AFFINITY
+    if (!(active_thread_mask & (1 << thread_id))) {
+      std::unique_lock<std::mutex> lock(thread_sync_mutex);
+      if (!(active_thread_mask & (1 << thread_id))) 
+        thread_sync_cv.wait_for(lock, std::chrono::milliseconds(500));
+    }
+#endif
     {
       PICAS_INFO("[run] thread %lu", thread_id);
       std::lock_guard wait_lock{wait_mutex_};

@@ -42,6 +42,10 @@
 #include "rclcpp/utilities.hpp"
 #include "rclcpp/visibility_control.hpp"
 
+#ifdef PICAS
+#include <rclcpp/picas.hpp>
+#endif
+
 namespace rclcpp
 {
 
@@ -408,6 +412,16 @@ public:
   int executor_priority = 0;
   int executor_cpu = 0;
 
+  #ifdef PICAS_THREAD_AFFINITY
+  std::mutex thread_sync_mutex;
+  std::condition_variable thread_sync_cv;
+  uint64_t active_thread_mask = -1;
+
+  RCLCPP_PUBLIC
+  void
+  update_active_threads(uint64_t active_thread_mask_);
+  #endif
+
   RCLCPP_PUBLIC
   void 
   set_executor_priority_cpu(int priority, int cpu) // deprecated: for single-threaded executors only
@@ -473,7 +487,7 @@ public:
   set_callback_affinity(rclcpp::SubscriptionBase::SharedPtr ptr, uint64_t affinity_mask)
   {
     if (!ptr) return;
-	if (!affinity_mask) return; // at least one thread should be selected
+    if (!affinity_mask) return; // at least one thread should be selected
     ptr->callback_affinity = affinity_mask;
  
     // There might be other waitables associated with the subscription
@@ -521,12 +535,20 @@ public:
   {
     if (ptr) ptr->callback_priority = priority;
   }
+
   RCLCPP_PUBLIC
   void
   set_callback_affinity(rclcpp::Waitable::SharedPtr ptr, uint64_t affinity_mask)
   {
     if (ptr) ptr->callback_affinity = affinity_mask;
   }
+
+  #ifdef PICAS_DEBUG
+  RCLCPP_PUBLIC
+  void
+  print_list_ready_executable(AnyExecutable & any_executable);
+  #endif
+
 #endif
 
   /// Returns true if the executor is currently spinning.
@@ -539,12 +561,6 @@ public:
   is_spinning();
 
 protected:
-#ifdef PICAS
-  RCLCPP_PUBLIC
-  void
-  print_list_ready_executable(AnyExecutable & any_executable);
-#endif
-
   RCLCPP_PUBLIC
   void
   spin_node_once_nanoseconds(
