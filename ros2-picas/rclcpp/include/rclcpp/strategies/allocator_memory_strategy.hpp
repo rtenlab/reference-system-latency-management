@@ -34,9 +34,6 @@
 #include <rclcpp/picas.hpp>
 
 extern thread_local size_t thread_id;
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-extern uint64_t waitset_thread_mask;
-#endif
 #endif
 
 namespace rclcpp
@@ -176,33 +173,18 @@ public:
 
       group->collect_all_ptrs(
         [this](const rclcpp::SubscriptionBase::SharedPtr & subscription) {
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-          if (subscription->callback_affinity & waitset_thread_mask)
-#endif
           subscription_handles_.push_back(subscription->get_subscription_handle());
         },
         [this](const rclcpp::ServiceBase::SharedPtr & service) {
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-          if (service->callback_affinity & waitset_thread_mask)
-#endif
           service_handles_.push_back(service->get_service_handle());
         },
         [this](const rclcpp::ClientBase::SharedPtr & client) {
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-          if (client->callback_affinity & waitset_thread_mask)
-#endif
           client_handles_.push_back(client->get_client_handle());
         },
         [this](const rclcpp::TimerBase::SharedPtr & timer) {
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-          if (timer->callback_affinity & waitset_thread_mask)
-#endif
           timer_handles_.push_back(timer->get_timer_handle());
         },
         [this](const rclcpp::Waitable::SharedPtr & waitable) {
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-          if (waitable->callback_affinity & waitset_thread_mask)
-#endif
           waitable_handles_.push_back(waitable);
         });
     }

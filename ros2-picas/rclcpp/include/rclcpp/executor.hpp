@@ -416,10 +416,6 @@ public:
   std::mutex thread_sync_mutex;
   std::condition_variable thread_sync_cv;
   uint64_t active_thread_mask = -1;
-
-  RCLCPP_PUBLIC
-  void
-  update_active_threads(uint64_t active_thread_mask_);
   #endif
 
   RCLCPP_PUBLIC
@@ -542,6 +538,10 @@ public:
   {
     if (ptr) ptr->callback_affinity = affinity_mask;
   }
+
+  RCLCPP_PUBLIC
+  void
+  update_active_threads(uint64_t active_thread_mask_);
 
   #ifdef PICAS_DEBUG
   RCLCPP_PUBLIC

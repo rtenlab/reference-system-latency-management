@@ -44,13 +44,6 @@ thread_local size_t thread_id = 0;
 // is_rt_thread: enable_callback_priority will be ignored by the thread 
 // (falls back to the default ROS scheduling) if this flag is set. 
 thread_local bool is_rt_thread = true;
-
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-atomic_bitmask idle_thread_mask;
-uint64_t waitset_thread_mask; // accessed with lock; atomic not needed
-struct timespec waitset_update_time;
-thread_local struct timespec idle_start_time = {0, 0};
-#endif
 #endif
 
 using namespace std::chrono_literals;
@@ -529,10 +522,6 @@ Executor::execute_any_executable(AnyExecutable & any_exec)
   if (!spinning.load()) {
     return;
   }
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-  // Callback execution begins. Thread is now busy.
-  idle_thread_mask.clear_flag(1 << thread_id);
-#endif
   if (any_exec.timer) {
     PICAS_INFO("[execute_any_executable] thread %lu (rt:%d) begin timer", thread_id, is_rt_thread);
     TRACEPOINT(
@@ -570,13 +559,6 @@ Executor::execute_any_executable(AnyExecutable & any_exec)
             std::string(
               "Failed to trigger guard condition from execute_any_executable: ") + ex.what());
   }
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-  // Callback execution is done. Thread is now idle. 
-  // ROS has waken up the wait (above code). So waitset can be immediately updated for the current thread's callbacks.
-  clock_gettime(CLOCK_MONOTONIC, &idle_start_time);
-  idle_thread_mask.set_flag(1 << thread_id);
-  PICAS_INFO("[execute_any_executable] thread %lu complete (idle_threads %lx)", thread_id, idle_thread_mask.get_flag());
-#endif
 }
 
 static
@@ -995,11 +977,6 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   // TODO(wjwwood): improve run to run efficiency of this function
 
 #ifdef PICAS
-  #ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-  if (!(idle_thread_mask.get_flag() & (1 << thread_id))) idle_thread_mask.set_flag(1 << thread_id); // needed only once per thread
-  PICAS_INFO("[get_next_executable] thread %lu (idle_threads %lx)", thread_id, idle_thread_mask.get_flag());
-  #endif
-
   if (callback_priority_enabled == false || is_rt_thread == false) {
     // If callback priority is not enabled, get a callback directly without updating wait-set
     // Otherwise, call wait_for_work() to update wait-set and then get a ready callback
@@ -1017,44 +994,10 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   if (!success) {
     // Wait for subscriptions or timers to work on
 
-#ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-    // wait_for_work() can be bypassed if:
-    //   1) waitset's update time is newer than the thread's idle start time, and
-    //   2) waitset considered the current task (thread_mask includes the current task)
-    if (is_timespec_greater(waitset_update_time, idle_start_time) && (waitset_thread_mask & (1 << thread_id))) {
-      success = get_next_ready_executable(any_executable);
-    }
-    if (!success) {
-      //#ifdef PICAS_DEBUG
-      //timeval ctime, ftime;
-      //double elapsed_time;
-      //gettimeofday(&ctime, NULL);
-      //#endif
-
-      waitset_thread_mask = idle_thread_mask.get_flag(); // keep the current value of idle_thread_mask
-      PICAS_INFO("[wait_for_work] thread %lu wait (waitset_threads %lx)", thread_id, waitset_thread_mask);
-
-      wait_for_work(timeout);
-
-      clock_gettime(CLOCK_MONOTONIC, &waitset_update_time);
-      PICAS_INFO("[wait_for_work] thread %lu wakeup (waitset_threads %lx)", thread_id, waitset_thread_mask);
-
-      //#ifdef PICAS_DEBUG
-      //gettimeofday(&ftime, NULL);
-      //elapsed_time = (double)(ftime.tv_sec - ctime.tv_sec) * 1.0;
-      //elapsed_time += (double)(ftime.tv_usec - ctime.tv_usec) / 1000000.0;
-      //PICAS_INFO("[get_next_executable] Elaspsed time for wait_for_work is %f", elapsed_time);    
-      //#endif
-
-      if (!spinning.load()) {
-        return false;
-      }
-      // Try again
-      success = get_next_ready_executable(any_executable);
-    }
-#else
     PICAS_INFO("[wait_for_work] thread %lu wait", thread_id);
+
     wait_for_work(timeout);
+
     PICAS_INFO("[wait_for_work] thread %lu wakeup", thread_id);
 
     if (!spinning.load()) {
@@ -1062,29 +1005,26 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
     }
     // Try again
     success = get_next_ready_executable(any_executable);
-#endif
   }
 
 #ifdef PICAS_THREAD_AFFINITY
   //#ifdef PICAS_DEBUG
   //if (success) print_list_ready_executable(any_executable);
   //#endif
-  #ifdef PICAS_THREAD_AFFINITY_EXPERIMENTAL
-  PICAS_INFO("[get_next_executable] thread %lu return %d (idle_threads %lx)", thread_id, success, idle_thread_mask.get_flag());
-  #endif
 #endif
 
   return success;
 }
 
-#ifdef PICAS_THREAD_AFFINITY
 void Executor::update_active_threads(uint64_t active_thread_mask_)
 {
+  (void)active_thread_mask_; // to prevent warning when PICAS_THREAD_AFFINITY is not defined
+#ifdef PICAS_THREAD_AFFINITY
   std::lock_guard<std::mutex> lock(thread_sync_mutex);
   active_thread_mask = active_thread_mask_;
   thread_sync_cv.notify_all();
-}
 #endif
+}
 
 #ifdef PICAS_DEBUG
 void
