@@ -455,7 +455,7 @@ public:
   set_callback_affinity(rclcpp::TimerBase::SharedPtr ptr, uint64_t affinity_mask)
   {
     if (!ptr) return;
-	if (!affinity_mask) return; // at least one thread should be selected
+    //if (!affinity_mask) return; // at least one thread should be selected
     ptr->callback_affinity = affinity_mask;
   }
 
@@ -483,7 +483,7 @@ public:
   set_callback_affinity(rclcpp::SubscriptionBase::SharedPtr ptr, uint64_t affinity_mask)
   {
     if (!ptr) return;
-    if (!affinity_mask) return; // at least one thread should be selected
+    //if (!affinity_mask) return; // at least one thread should be selected
     ptr->callback_affinity = affinity_mask;
  
     // There might be other waitables associated with the subscription

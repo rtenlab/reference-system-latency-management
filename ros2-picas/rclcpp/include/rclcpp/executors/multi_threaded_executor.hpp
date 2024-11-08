@@ -39,29 +39,33 @@
 #include <pthread.h>
 #define gettid() syscall(__NR_gettid)
 struct sched_attr {
-    int32_t size;
+    uint32_t size;
 
-    int32_t sched_policy;
-    int64_t sched_flags;
+    uint32_t sched_policy;
+    uint64_t sched_flags;
 
     /* SCHED_NORMAL, SCHED_BATCH */
-    int32_t sched_nice;
+    uint32_t sched_nice;
 
     /* SCHED_FIFO, SCHED_RR */
-    int32_t sched_priority;
+    uint32_t sched_priority;
 
     /* SCHED_DEADLINE (nsec) */
-    int64_t sched_runtime;
-    int64_t sched_deadline;
-    int64_t sched_period;
+    uint64_t sched_runtime;
+    uint64_t sched_deadline;
+    uint64_t sched_period;
+
+    /* Utilization hints */
+    uint32_t sched_util_min;
+    uint32_t sched_util_max;
 };
+
 #endif
 
 namespace rclcpp
 {
 namespace executors
 {
-
 class MultiThreadedExecutor : public rclcpp::Executor
 {
 public:
@@ -118,6 +122,7 @@ private:
   RCLCPP_DISABLE_COPY(MultiThreadedExecutor)
 
 #ifdef PICAS_THREAD_AFFINITY
+protected:
   ordered_mutex wait_mutex_;
 #else
   std::mutex wait_mutex_;

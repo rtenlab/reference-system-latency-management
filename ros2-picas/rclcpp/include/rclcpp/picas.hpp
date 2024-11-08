@@ -3,7 +3,7 @@
 
 //#define PICAS_DEBUG // comment this out for non-debug mode
 
-//#define PICAS_THREAD_AFFINITY
+#define PICAS_THREAD_AFFINITY
 
 #ifdef PICAS_DEBUG
   #define PICAS_INFO(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)
@@ -11,7 +11,7 @@
   #define PICAS_INFO(fmt, ...) ((void)0)
 #endif
 
-class atomic_bitmask {
+/*class atomic_bitmask {
   std::atomic<uint64_t> bits{0};
 public:
   void set_flag(uint64_t flag) {
@@ -46,7 +46,7 @@ static inline bool is_timespec_smaller(struct timespec &t1, struct timespec &t2)
 static inline bool is_timespec_equal(struct timespec &t1, struct timespec &t2)
 {
   return t1.tv_sec == t2.tv_sec && t1.tv_nsec == t2.tv_nsec;
-}
+}*/
 
 #include <mutex>
 #include <condition_variable>
