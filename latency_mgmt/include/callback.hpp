@@ -7,6 +7,7 @@ class State;
 
 #include <state.hpp>
 #include <executor.hpp>
+#include <ftxmtx.hpp>
 #include <iostream>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/random_generator.hpp>
@@ -106,6 +107,7 @@ public:
     void add_branch_timestamp(int chain_instance_id);
     void add_branch_timestamp(int chain_instance_id, uint64_t elapsed_since_release_usec);
     struct timeval get_last_branch_timestamp(int chain_instance_id) const;
+    struct timeval get_first_branch_timestamp(int chain_instance_id) const;
     std::deque<struct timeval> get_branch_timestamps(int chain_instance_id) const;
 
     void setPriorityScheduling(bool priority_scheduling);
@@ -120,7 +122,7 @@ public:
     uint64_t get_callback_affinity();
     void stop_timer();
     void start_timer();
-    void check_if_last_callback(int chain_instance_id);
+    void record_response_time(int chain_instance_id);
 
     rclcpp::TimerBase::SharedPtr timer_ = NULL;
     rclcpp::Publisher<test_interfaces::msg::TestString>::SharedPtr publisher_ = NULL;
@@ -148,7 +150,7 @@ private:
     std::unordered_map<int, std::deque<struct timeval>> branch_timestamps;
     std::shared_ptr<Chain> chain;
     std::deque<struct timeval> non_state_aware_ex_time_history;
-    std::mutex execution_history_mutex_;
+    ordered_mutex execution_history_mutex_;
 };
 
 

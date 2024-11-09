@@ -56,8 +56,10 @@ public:
 
   void set_affinity_subscriptions(int index, unsigned long affinity)
   {
+#ifdef PICAS
     if (index < 0 || index > 1) std::cout << "ERROR: Intersection callback affinity (" << index << ", " << affinity << ")" << std::endl;
     connections_[index].subscription->callback_affinity = affinity;
+#endif
   }
 
 private:

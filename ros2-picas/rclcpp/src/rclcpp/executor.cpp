@@ -35,8 +35,9 @@
 
 #include "tracetools/tracetools.h"
 
-#ifdef PICAS
 #include <rclcpp/picas.hpp>
+
+#ifdef PICAS
 #include "rclcpp/memory_strategy.hpp"
 using rclcpp::memory_strategy::MemoryStrategy;
 
@@ -1016,15 +1017,15 @@ Executor::get_next_executable(AnyExecutable & any_executable, std::chrono::nanos
   return success;
 }
 
+#ifdef PICAS
 void Executor::update_active_threads(uint64_t active_thread_mask_)
 {
   (void)active_thread_mask_; // to prevent warning when PICAS_THREAD_AFFINITY is not defined
-#ifdef PICAS_THREAD_AFFINITY
   std::lock_guard<std::mutex> lock(thread_sync_mutex);
   active_thread_mask = active_thread_mask_;
   thread_sync_cv.notify_all();
-#endif
 }
+#endif
 
 #ifdef PICAS_DEBUG
 void

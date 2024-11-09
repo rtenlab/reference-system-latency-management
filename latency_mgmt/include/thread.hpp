@@ -7,7 +7,7 @@ class Chain;
 class executor;
 
 #include <thread>
-//#include <ftxmtx.hpp>
+#include <ftxmtx.hpp>
 #include <executor.hpp>
 #include <chain.hpp>
 
@@ -35,7 +35,11 @@ class executor_thread
 {
 public:
     //executor_thread(FutexMutex* global_waitset_mutex, executor* exec);
+#ifdef PICAS_THREAD_AFFINITY
     executor_thread(ordered_mutex *wait_mutex, executor *exec, int logical_thread_id);
+#else
+    executor_thread(std::mutex *wait_mutex, executor *exec, int logical_thread_id);
+#endif
     executor_thread(executor* exec);
     ~executor_thread();
     void set_priority(int priority);
@@ -68,7 +72,11 @@ public:
 
 private:
     //FutexMutex *global_waitset_mutex, *global_queue_mutex;
+#ifdef PICAS_THREAD_AFFINITY
     ordered_mutex *wait_mutex_;
+#else
+    std::mutex *wait_mutex_;
+#endif
     executor* exec;
     int who = RUSAGE_THREAD;
     pid_t threadID;

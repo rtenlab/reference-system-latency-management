@@ -52,8 +52,10 @@ public:
 
   void set_affinity_subscriptions(int index, unsigned long affinity)
   {
+#ifdef PICAS
     if (index < 0 || index > 1) std::cout << "ERROR: Fusion callback affinity (" << index << ", " << affinity << ")" << std::endl;
     subscriptions_[index].subscription->callback_affinity = affinity;
+#endif
   }
 
 private:

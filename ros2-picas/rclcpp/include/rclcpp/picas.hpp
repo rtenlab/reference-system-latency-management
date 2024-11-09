@@ -1,6 +1,7 @@
 #ifndef RCLCPP__CB_SCHED_HPP_
 #define RCLCPP__CB_SCHED_HPP_
 
+#ifdef PICAS
 //#define PICAS_DEBUG // comment this out for non-debug mode
 
 #define PICAS_THREAD_AFFINITY
@@ -238,7 +239,11 @@ static inline void print_stacktrace() // from https://panthema.net/
   free(funcname);
   free(symbollist);
 }
-
 #endif
 
+#else // PICAS
+
+#define PICAS_INFO(fmt, ...) ((void)0)
+
 #endif
+#endif // RCLCPP__CB_SCHED_HPP_

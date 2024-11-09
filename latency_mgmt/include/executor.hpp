@@ -59,6 +59,7 @@ public:
     static void unregister_instance(executor *instance);
     void stop();
     void start();
+    void pause();
     void join();
     void set_partitioned(bool partitioned);
     bool get_partitioned();

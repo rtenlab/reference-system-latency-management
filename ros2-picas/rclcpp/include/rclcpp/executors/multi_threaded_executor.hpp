@@ -121,8 +121,8 @@ protected:
 private:
   RCLCPP_DISABLE_COPY(MultiThreadedExecutor)
 
+protected: // PICAS: changed to protected to allow inheritance
 #ifdef PICAS_THREAD_AFFINITY
-protected:
   ordered_mutex wait_mutex_;
 #else
   std::mutex wait_mutex_;

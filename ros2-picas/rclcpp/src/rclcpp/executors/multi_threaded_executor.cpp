@@ -145,7 +145,8 @@ MultiThreadedExecutor::run(size_t this_thread_number)
     if (!(active_thread_mask & (1 << thread_id))) {
       std::unique_lock<std::mutex> lock(thread_sync_mutex);
       if (!(active_thread_mask & (1 << thread_id))) 
-        thread_sync_cv.wait_for(lock, std::chrono::milliseconds(500));
+        //thread_sync_cv.wait(lock);
+        thread_sync_cv.wait_for(lock, std::chrono::milliseconds(100));
     }
 #endif
     {

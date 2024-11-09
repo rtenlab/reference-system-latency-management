@@ -42,9 +42,7 @@
 #include "rclcpp/utilities.hpp"
 #include "rclcpp/visibility_control.hpp"
 
-#ifdef PICAS
 #include <rclcpp/picas.hpp>
-#endif
 
 namespace rclcpp
 {
@@ -412,11 +410,9 @@ public:
   int executor_priority = 0;
   int executor_cpu = 0;
 
-  #ifdef PICAS_THREAD_AFFINITY
   std::mutex thread_sync_mutex;
   std::condition_variable thread_sync_cv;
   uint64_t active_thread_mask = -1;
-  #endif
 
   RCLCPP_PUBLIC
   void 
@@ -446,17 +442,21 @@ public:
   void
   set_callback_priority(rclcpp::TimerBase::SharedPtr ptr, int priority)
   {
-    if (!ptr) return;
-    ptr->callback_priority = priority;
+    if (ptr) ptr->callback_priority = priority;
   }
 
   RCLCPP_PUBLIC
   void
   set_callback_affinity(rclcpp::TimerBase::SharedPtr ptr, uint64_t affinity_mask)
   {
-    if (!ptr) return;
-    //if (!affinity_mask) return; // at least one thread should be selected
-    ptr->callback_affinity = affinity_mask;
+    if (ptr) ptr->callback_affinity = affinity_mask;
+  }
+
+  RCLCPP_PUBLIC
+  void
+  set_callback_data(rclcpp::TimerBase::SharedPtr ptr, void* data)
+  {
+    if (ptr) ptr->callback_data = data;
   }
 
   RCLCPP_PUBLIC
@@ -483,7 +483,6 @@ public:
   set_callback_affinity(rclcpp::SubscriptionBase::SharedPtr ptr, uint64_t affinity_mask)
   {
     if (!ptr) return;
-    //if (!affinity_mask) return; // at least one thread should be selected
     ptr->callback_affinity = affinity_mask;
  
     // There might be other waitables associated with the subscription
@@ -494,6 +493,24 @@ public:
     }
     for (auto & subscription_event : ptr->get_event_handlers()) {
       subscription_event.second->callback_affinity = affinity_mask;
+    }
+  }
+
+  RCLCPP_PUBLIC
+  void 
+  set_callback_data(rclcpp::SubscriptionBase::SharedPtr ptr, void* data)
+  {
+    if (!ptr) return;
+    ptr->callback_data = data;
+ 
+    // There might be other waitables associated with the subscription
+    // (e.g., events, intra-process msgs; see NodeTopics::add_subscription() in node_topics.cpp)
+    auto intra_process_waitable = ptr->get_intra_process_waitable();
+    if (intra_process_waitable) {
+      intra_process_waitable->callback_data = data;
+    }
+    for (auto & subscription_event : ptr->get_event_handlers()) {
+      subscription_event.second->callback_data = data;
     }
   }
 
@@ -513,6 +530,13 @@ public:
 
   RCLCPP_PUBLIC
   void
+  set_callback_data(rclcpp::ServiceBase::SharedPtr ptr, void* data)
+  {
+    if (ptr) ptr->callback_data = data;
+  }
+
+  RCLCPP_PUBLIC
+  void
   set_callback_priority(rclcpp::ClientBase::SharedPtr ptr, int priority)
   {
     if (ptr) ptr->callback_priority = priority;
@@ -527,6 +551,13 @@ public:
 
   RCLCPP_PUBLIC
   void
+  set_callback_affinity(rclcpp::ClientBase::SharedPtr ptr, void* data)
+  {
+    if (ptr) ptr->callback_data = data;
+  }
+
+  RCLCPP_PUBLIC
+  void
   set_callback_priority(rclcpp::Waitable::SharedPtr ptr, int priority)
   {
     if (ptr) ptr->callback_priority = priority;
@@ -537,6 +568,13 @@ public:
   set_callback_affinity(rclcpp::Waitable::SharedPtr ptr, uint64_t affinity_mask)
   {
     if (ptr) ptr->callback_affinity = affinity_mask;
+  }
+
+  RCLCPP_PUBLIC
+  void
+  set_callback_affinity(rclcpp::Waitable::SharedPtr ptr, void* data)
+  {
+    if (ptr) ptr->callback_data = data;
   }
 
   RCLCPP_PUBLIC

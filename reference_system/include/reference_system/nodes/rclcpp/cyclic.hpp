@@ -65,13 +65,17 @@ public:
 
   void set_affinity_timer(unsigned long affinity)
   {
+#ifdef PICAS
   	timer_->callback_affinity = affinity;
+#endif
   }
 
   void set_affinity_subscriptions(int index, unsigned long affinity)
   {
+#ifdef PICAS
     if (index < 0 || index > 5) std::cout << "ERROR: Cyclic callback affinity (" << index << ", " << affinity << ")" << std::endl;
     subscriptions_[index].subscription->callback_affinity = affinity;
+#endif
   }
 
 private:

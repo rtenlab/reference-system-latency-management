@@ -30,8 +30,9 @@
 
 #include "rmw/types.h"
 
-#ifdef PICAS
 #include <rclcpp/picas.hpp>
+
+#ifdef PICAS
 
 extern thread_local size_t thread_id;
 #endif

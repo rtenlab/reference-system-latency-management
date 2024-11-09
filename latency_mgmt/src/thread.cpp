@@ -69,8 +69,13 @@ void add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid)
     std::cout << "Thread with TID " << tid << " added to cgroup " << cgroup_name << std::endl;
 }
 
+#ifdef PICAS_THREAD_AFFINITY
 executor_thread::executor_thread(ordered_mutex *wait_mutex, executor *exec, int logical_thread_id)
     : wait_mutex_(wait_mutex), exec(exec), logical_thread_id(logical_thread_id)
+#else
+executor_thread::executor_thread(std::mutex *wait_mutex, executor *exec, int logical_thread_id)
+    : wait_mutex_(wait_mutex), exec(exec), logical_thread_id(logical_thread_id)
+#endif
 {
 }
 
@@ -404,7 +409,7 @@ int executor_thread::set_sched_deadline(struct sched_attr attr, unsigned int fla
     attr.sched_util_max = 1024;
 
     attr_2 = attr;
-    std::cout << "Setting deadline for thread " << threadID << " to " << attr.sched_policy << " / " << attr.sched_runtime << " / " << attr.sched_period << " / " << attr.sched_deadline << std::endl;
+    std::cout << "Setting deadline for thread " << threadID << " (id:" << logical_thread_id << ", rt:" << rt << ") to " << attr.sched_policy << " / " << attr.sched_runtime << " / " << attr.sched_period << " / " << attr.sched_deadline << std::endl;
     int ret = sched_setattr(threadID, &attr, 0);
     if (ret == -1)
     {

@@ -47,7 +47,9 @@ public:
 
   void set_affinity_subscription(unsigned long affinity)
   {
+#ifdef PICAS
     subscription_->callback_affinity = affinity;
+#endif
   }
 
 private:

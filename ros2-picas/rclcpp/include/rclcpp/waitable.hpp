@@ -35,7 +35,7 @@ public:
 #ifdef PICAS
   int callback_priority = 0;
   uint64_t callback_affinity = -1;
-  void *data_; // storage reserved for custom usage
+  void *callback_data = NULL; // storage reserved for custom usage
 #endif
 
   RCLCPP_PUBLIC

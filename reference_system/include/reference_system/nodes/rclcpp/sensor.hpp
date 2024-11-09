@@ -45,7 +45,9 @@ public:
 
   void set_affinity_timer(unsigned long affinity)
   {
+#ifdef PICAS
     timer_->callback_affinity = affinity;
+#endif
   }
 
 private:
