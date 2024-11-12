@@ -336,6 +336,12 @@ void executor_thread::add_chain_to_thread(std::shared_ptr<Chain> chain)
         this->add_callback(real_callback_shared_ptr);
     }
 }
+void executor_thread::remove_chain_from_thread(std::shared_ptr<Chain> chain){
+    for(auto &callback : chain->getCallbacks()){
+        this->remove_callback(callback->getUUID());
+    }
+}
+
 void executor_thread::remove_callback(boost::uuids::uuid uuid)
 {
     callbacks.erase(uuid);

@@ -47,7 +47,7 @@ public:
     void set_affinity(cpu_set_t cpuSet, bool rt);
     void add_callback(std::shared_ptr<Callback> callback);
     void add_chain_to_thread(std::shared_ptr<Chain> chain);
-
+    void remove_chain_from_thread(std::shared_ptr<Chain> chain);
     void remove_callback(boost::uuids::uuid uuid);
     void getusage();
     void set_threadID(int threadID);

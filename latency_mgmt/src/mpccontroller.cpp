@@ -16,20 +16,41 @@ void MPCController::run()
 {
     this->create_threadclass();
     bool first_run = true;
-    do {
+    do
+    {
         // Get the current state from the executor
         State current_state = exec->get_state();
 
         // Create a new state for the next prediction
         State next_state = current_state;
 
+        // Check timing violations and adjust the budget
         for (auto &tc : threadclasses)
         {
             if (tc->rt_threadclass)
             {
-                reduce_rt_budget(tc, current_state);
+                for (auto &chain : tc->chains)
+                {
+                    uint64_t chain_response_time = 0;
+                    for (auto &callback : chain->getCallbacks())
+                    {
+                        chain_response_time += callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
+                    }
+                    if (chain_response_time > chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec && chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec != 0)
+                    {
+                        reduce_rt_budget(tc, current_state);
+                    }
+                }
             }
         }
+
+        // for (auto &tc : threadclasses)
+        // {
+        //     if (tc->rt_threadclass)
+        //     {
+        //         reduce_rt_budget(tc, current_state);
+        //     }
+        // }
         // Optimize the sched_deadline_budget
         // optimize_sched_runtime(current_state, next_state);
 
@@ -38,14 +59,15 @@ void MPCController::run()
         // {
         //     apply_next_state(next_state);
         // }
-        
+
         // IMPORTANT: Apply callback-to-thread assignment to rclcpp
-        if (first_run) 
+        if (first_run)
         {
             exec->start();
             first_run = false;
         }
-        else exec->apply_callback_to_thread_assignment();
+        else
+            exec->apply_callback_to_thread_assignment();
 
         std::this_thread::sleep_for(period);
 
@@ -315,7 +337,7 @@ out:
     for (size_t i = 0; i < chainset.size(); i++)
     {
         struct timeval response_time;
-        //if (response_times[i] == -1)
+        // if (response_times[i] == -1)
         if (response_times[i] > 20e6 - 100) // don't compare with 20e6; double is inaccurate
         {
             response_time.tv_sec = -1;
@@ -331,34 +353,6 @@ out:
 }
 
 // Function to predict the response time based on a new budget
-struct timeval MPCController::predict_response_time(uint64_t new_budget, timeval current_response_time, uint64_t current_budget)
-{
-    timeval predicted_time;
-
-    // Check if current or new budget is 0
-    if (current_budget == 0 || new_budget == 0)
-    {
-        std::cerr << "Error: Budget cannot be 0. Returning original response time." << std::endl;
-        return current_response_time;
-    }
-
-    double ratio = static_cast<double>(new_budget) / current_budget;
-
-    // Log the current and new budgets and the ratio
-    std::cout << "Predicting response time with new budget: " << new_budget
-              << ", current budget: " << current_budget
-              << ", ratio: " << ratio << std::endl;
-
-    // Calculate the predicted response time
-    predicted_time.tv_sec = static_cast<long>(current_response_time.tv_sec / ratio);
-    predicted_time.tv_usec = static_cast<long>(current_response_time.tv_usec / ratio);
-
-    // Log the predicted response time
-    std::cout << "Predicted response time: " << predicted_time.tv_sec
-              << "s " << predicted_time.tv_usec << "us" << std::endl;
-
-    return predicted_time;
-}
 
 double MPCController::compute_chain_utilization(std::shared_ptr<Chain> chain, State current_state)
 {
@@ -371,19 +365,6 @@ double MPCController::compute_chain_utilization(std::shared_ptr<Chain> chain, St
     return utilization / (chain->getPeriod().tv_sec * 1e6 + chain->getPeriod().tv_usec);
 }
 
-void MPCController::control_budget(State &current_state, State &next_state)
-{
-    (void)current_state; (void)next_state;
-    // for each threadclass
-    for (auto &tg : threadclasses)
-    {
-        // if the threadclass is a RT threadclass
-        if (tg->rt_threadclass)
-        {
-            // for each chain in the threadclass
-        }
-    }
-}
 
 void MPCController::create_threadclass(void)
 {
@@ -419,6 +400,18 @@ void MPCController::create_threadclass(void)
         }
     }
     std::cout << "Threadclasses created" << std::endl;
+    this->reallocate_chains();
+}
+
+void MPCController::reallocate_chains()
+{
+    // for each threadclass
+    for (auto &tg : this->threadclasses)
+    {
+        tg->chains.clear();
+        tg->set_utilization(0);
+    }
+    // start reallocation
     std::cout << "Parsing and sorting chains" << std::endl;
     std::vector<std::vector<std::shared_ptr<Chain>>> split_chainsets = exec->parse_and_sort_chains(exec->get_chains());
     std::vector<std::shared_ptr<Chain>> rt_chains = split_chainsets[0];
@@ -653,6 +646,8 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
     std::vector<std::shared_ptr<Chain>> chainset = tc->get_chains();
     std::vector<struct timeval> response_times;
     std::vector<struct timeval> deadlines;
+    bool schedulable = true;
+
     if (chainset.empty())
     {
         std::cout << "No chains assigned to threadclass" << std::endl;
@@ -664,6 +659,7 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
     {
         deadlines.push_back(chain->getDeadline());
     }
+
     while (min_budget < max_budget)
     {
         mid_budget = (min_budget + max_budget) / 2;
@@ -680,7 +676,7 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
             }
             /* FIXME: map entry cannot be found by current_state...
             std::deque<struct timeval> dq = chain->get_branch_response_time_history(current_state, 0); // all chains linear at this point
-            for (auto& val : dq) 
+            for (auto& val : dq)
                 chain_response_time += val.tv_sec * 1e6 + val.tv_usec;
             if (dq.size()) chain_response_time /= dq.size();
             */
@@ -702,7 +698,7 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
         //      std::cout << "Chain" << i << "Actual Response Time: " << actual_response_time << "us" << std::endl;
         //      std::cout << "Chain " << i << " Deadline: " << deadlines[i].tv_sec << "s " << deadlines[i].tv_usec << "us" << std::endl;
         //  }
-        bool schedulable = true;
+        schedulable = true;
         for (size_t i = 0; i < response_times.size(); i++)
         {
             if (response_times[i].tv_sec * 1e6 + response_times[i].tv_usec > deadlines[i].tv_sec * 1e6 + deadlines[i].tv_usec || response_times[i].tv_usec == -1)
@@ -721,9 +717,61 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
         }
     }
     best_budget = std::max(min_budget, std::min(mid_budget, max_budget));
+    static int tries = 0;
+    if (schedulable == false)
+    {
+        std::cout << "Chainset for threadclass " << tc->id << " is not schedulable with budget " << best_budget << std::endl;
+        tries++;
+        if (tries == 2)
+        {
+            std::cerr << "Chainset for threadclass " << tc->id << " is not schedulable after reallocation. Demoting chain to BE." << std::endl;
+            tries = 0;
+            // demote the chain to BE
+            // remove the chain from the rt list and add it to the be list and try again
+            // Find the least critical chain and demote it to BE
+            std::shared_ptr<Chain> least_critical_chain = nullptr;
+            for (auto &chain : chainset)
+            {
+                if (least_critical_chain == nullptr)
+                {
+                    least_critical_chain = chain;
+                }
+                else if (chain->getBranchPriority(0) < least_critical_chain->getBranchPriority(0))
+                {
+                    least_critical_chain = chain;
+                }
+                else if (least_critical_chain->getBranchPriority(0) == 0 && chain->getBranchPriority(0) != 0)
+                {
+                    least_critical_chain = chain;
+                }
+            }
+            tc->remove_chain(least_critical_chain);
+
+            // find the be threadclass
+            std::shared_ptr<threadclass> be_tc = nullptr;
+            double min_util = 1.0;
+            for (auto &threadclass : threadclasses)
+            {
+                if (threadclass->get_utilization() < min_util && threadclass->rt_threadclass == false)
+                {
+                    be_tc = threadclass;
+                    min_util = threadclass->get_utilization();
+                }
+            }
+            be_tc->add_chain(least_critical_chain);
+            be_tc->set_utilization(be_tc->get_utilization() + compute_chain_utilization(least_critical_chain, current_state));
+            std::cout << "Demoted chain " << least_critical_chain->getChainID() << " to BE threadclass " << be_tc->id << " with utilization: " << be_tc->get_utilization() << std::endl;
+        }
+        else
+        {
+            std::cerr << "Chainset for threadclass " << tc->id << " is not schedulable after reallocation. Trying to reallocate chains." << std::endl;
+            reallocate_chains();
+            return;
+        }
+    }
+    // now assign the budget to the threadclass
 
 empty_rt_chain:
-    // now assign the budget to the threadclass
     tc->apply_budgets(best_budget);
     // now we need to set the budget for each thread in the threadclass
     if (tc->rt_threadclass)
@@ -835,219 +883,5 @@ empty_rt_chain:
     //}
     //}
 }
-
-void MPCController::optimize_sched_runtime(State &current_state, State &next_state)
-{
-    // for each chain
-    for (size_t i = 0; i < current_state.chains.size(); ++i)
-    {
-        // get current sched deadline budget
-        uint64_t current_budget = current_state.sched_deadline_budget[i];
-        timeval current_response_time;                                   // Actual response time
-        timeval latency_target = current_state.chain_latency_targets[i]; // Latency target for chain i
-                                                                         // get the 95th percentile of the measuerd response times for the chain
-        std::deque<struct timeval> response_times = current_state.chains[i]->get_branch_response_time_history(current_state, 0);
-
-        if (latency_target.tv_sec == 0 && latency_target.tv_usec == 0)
-        {
-            std::cerr << "Error: Latency target is 0. Skipping optimization for chain " << i << std::endl;
-            continue;
-        }
-        // Check if the response times vector is not empty
-        if (!response_times.empty())
-        {
-            // Sort the response times based on their total microseconds
-            std::sort(response_times.begin(), response_times.end(), [](const struct timeval &a, const struct timeval &b)
-                      { return (a.tv_sec * 1000000 + a.tv_usec) < (b.tv_sec * 1000000 + b.tv_usec); });
-
-            // Calculate the index for the 95th percentile
-            size_t index = static_cast<size_t>(response_times.size() * 0.95);
-
-            // Ensure the index does not exceed the size of the vector
-            if (index >= response_times.size())
-            {
-                index = response_times.size() - 1; // Set to the last element if index is out of bounds
-            }
-
-            // Get the 95th percentile response time
-            timeval percentile_response_time = response_times[index];
-            current_response_time = percentile_response_time;
-            // Now you can use percentile_response_time for further processing
-            std::cout << "95th percentile response time: " << percentile_response_time.tv_sec << "s "
-                      << percentile_response_time.tv_usec << "us" << std::endl;
-        }
-        else
-        {
-            // Handle the case where response_times is empty
-            std::cerr << "Error: No response times available for chain." << std::endl;
-            continue;
-            current_response_time = {std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max()};
-        }
-        if (current_response_time.tv_sec == 0 && current_response_time.tv_usec == 0)
-        {
-            std::cerr << "Error: Response time is 0. Skipping optimization for chain " << i << std::endl;
-            continue;
-        }
-        else if (current_response_time.tv_sec * 1e6 + current_response_time.tv_usec == latency_target.tv_sec * 1e6 + latency_target.tv_usec)
-        {
-            std::cout << "Response time is equal to latency target. Skipping optimization for chain " << i << std::endl;
-            continue;
-        }
-        // Log current state information
-        std::cout << "Optimizing thread " << i << " with current budget: "
-                  << current_budget << " and current response time: "
-                  << current_response_time.tv_sec << "s "
-                  << current_response_time.tv_usec << "us" << std::endl;
-
-        // If the budget is 0, assign a budget based on the current response time
-        if (current_budget == 0)
-        {
-            double response_time_usec = current_response_time.tv_sec * 1e6 + current_response_time.tv_usec;
-            double target_time_usec = latency_target.tv_sec * 1e6 + latency_target.tv_usec;
-
-            // Calculate the necessary budget as a ratio of response time to latency target
-            current_budget = static_cast<uint64_t>(response_time_usec / target_time_usec * 1e6);
-            std::cout << "Assigning new budget based on response time: " << current_budget << " us" << std::endl;
-            // bound check
-            if (current_budget < 5000)
-            {
-                current_budget = 5000;
-            }
-            if (current_budget > 1e6)
-            {
-                current_budget = 1e6;
-            }
-            next_state.sched_deadline_budget[i] = current_budget;
-
-            // Apply the new budget to the system
-            // exec->set_thread_budget(i, current_budget);
-            // exec->set_thread_policy(i, SCHED_DEADLINE);
-            // exec->set_thread_affinity(exec->get_thread(i)->get_threadID(), current_state.thread_cpu_set[i]);
-            continue;
-        }
-
-        // Try different budgets and predict response times
-        uint64_t best_budget = current_budget <= 1e6 ? current_budget : 1e6; // Initialize with the current budget
-        timeval best_predicted_time = current_response_time;
-        double min_difference = std::numeric_limits<double>::max(); // Initialize with a large number
-        double step_size = 0.01 * current_budget;                   // Adaptive step size (10% of current budget)
-        uint64_t min_budget = 5000;                                 // Minimum budget, e.g., 10ms
-        uint64_t max_budget = 1e6;                                  // 2 * current_budget < 1e6 ? 2 * current_budget : 1e6;                   // Max budget is twice the current budget
-        uint64_t new_budget = current_budget;
-        double current_response_time_usec = current_response_time.tv_sec * 1e6 + current_response_time.tv_usec;
-        double latency_target_usec = latency_target.tv_sec * 1e6 + latency_target.tv_usec;
-        // Start with the current budget and adjust iteratively
-        if (current_response_time_usec > latency_target_usec)
-        {
-            min_budget = current_budget;
-        }
-        else
-        {
-            max_budget = current_budget;
-        }
-
-        while (max_budget > min_budget)
-        {
-            // Calculate the mid-point between min and max budgets
-            uint64_t new_budget = (max_budget + min_budget) / 2;
-            std::cout << "New budget: " << new_budget << std::endl;
-            std::cout << "Current budget: " << current_budget << std::endl;
-            std::cout << "Min budget: " << min_budget << std::endl;
-            std::cout << "Max budget: " << max_budget << std::endl;
-            std::cout << "Current response time: " << current_response_time_usec << std::endl;
-            // uint64_t new_budget = current_budget;
-            timeval predicted_time = predict_response_time(new_budget, current_response_time, current_budget);
-
-            double predicted_time_usec = predicted_time.tv_sec * 1e6 + predicted_time.tv_usec;
-            // Calculate the difference between the predicted response time and the latency target
-            double difference = std::abs(predicted_time_usec - latency_target_usec);
-
-            // Log the prediction
-            std::cout << "Budget: " << new_budget << " us, Predicted time: "
-                      << predicted_time.tv_sec << "s "
-                      << predicted_time.tv_usec << "us, Difference: " << difference << " us" << std::endl;
-
-            // Update the best option if this budget results in a smaller difference
-            if (difference < min_difference)
-            {
-                min_difference = difference;
-                best_predicted_time = predicted_time;
-                best_budget = new_budget;
-            }
-
-            if (predicted_time_usec > latency_target_usec)
-            {
-                std::cout << "Predicted time is greater than latency target" << std::endl;
-                min_budget = new_budget + 1;
-            }
-            else
-            {
-                std::cout << "Predicted time is later than latency target" << std::endl;
-                max_budget = new_budget - 1;
-            }
-            // Early exit if we are within a certain threshold of the target latency
-            if (difference < 20 && predicted_time_usec <= latency_target_usec) // Allow a 1000 us margin for optimization
-            {
-                std::cout << "Reached optimal budget with acceptable latency difference of " << difference << " us" << std::endl;
-                break;
-            }
-        }
-
-        // Log the final decision
-        std::cout << "Selected budget for thread " << i << ": "
-                  << best_budget << " us, predicted response time: "
-                  << best_predicted_time.tv_sec << "s "
-                  << best_predicted_time.tv_usec << "us" << std::endl;
-
-        best_budget = std::max(min_budget, std::min(best_budget, max_budget));
-
-        // Log if the budget was adjusted to the bounds
-        if (best_budget == min_budget)
-        {
-            std::cout << "Setting budget to minimum: " << min_budget << std::endl;
-        }
-        else if (best_budget == max_budget)
-        {
-            std::cout << "Setting budget to maximum: " << max_budget << std::endl;
-        }
-
-        // Update the next state with the chosen best budget
-        next_state.sched_deadline_budget[i] = best_budget;
-    }
-}
-
-// Function to apply the optimized state
-void MPCController::apply_next_state(const State &next_state)
-{
-}
-// Set thread budgets, priorities, and policies based on the next state
-//     for (size_t i = 0; i < next_state.sched_deadline_budget.size(); ++i)
-//     {
-//         std::cout << "Applying new budget to thread " << i
-//                   << ": " << next_state.sched_deadline_budget[i] << std::endl;
-
-//         exec->set_thread_budget(i, next_state.sched_deadline_budget[i]);
-//         exec->set_thread_policy(i, SCHED_DEADLINE);
-//         cpu_set_t cpu_set;
-//         CPU_ZERO(&cpu_set);
-//         CPU_SET(6, &cpu_set);
-//         exec->set_thread_affinity(i, cpu_set);
-//         struct sched_attr attr;
-//         attr.size = sizeof(attr);
-//         attr.sched_policy = SCHED_DEADLINE;
-//         attr.sched_runtime = next_state.sched_deadline_budget[i];
-//         attr.sched_period = 1 * 1000 * 1000;   // 200ms period
-//         attr.sched_deadline = 1 * 1000 * 1000; // 200ms deadline
-//         attr.sched_flags = 0;
-//         attr.sched_nice = 0;
-//         attr.sched_priority = 0;
-//         attr.sched_util_min = 0;
-//         attr.sched_util_max = 1024;
-//         std::cout << exec->get_thread(i)->set_sched_deadline(attr, 0) << std::endl;
-
-//         // Log that the budget has been applied
-//         std::cout << "Budget applied for thread " << i << std::endl;
-//     }
-// }
 
 #endif // MPC_CONTROLLER_CPP

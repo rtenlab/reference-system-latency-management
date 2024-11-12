@@ -4,7 +4,7 @@
 #ifdef PICAS
 //#define PICAS_DEBUG // comment this out for non-debug mode
 
-#define PICAS_THREAD_AFFINITY
+//#define PICAS_THREAD_AFFINITY
 
 #ifdef PICAS_DEBUG
   #define PICAS_INFO(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)

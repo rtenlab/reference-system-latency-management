@@ -41,6 +41,17 @@ void threadclass::add_chain(std::shared_ptr<Chain> chain)
         thread->add_chain_to_thread(chain);
     }
 }
+void threadclass::remove_chain(std::shared_ptr<Chain> chain)
+{
+    chains.erase(std::remove(chains.begin(), chains.end(), chain), chains.end());
+    for(auto &callback : chain->getCallbacks()){
+        callbacks.erase(std::remove(callbacks.begin(), callbacks.end(), callback), callbacks.end());
+    }
+    for(auto &thread : threads){
+        thread->remove_chain_from_thread(chain);
+    }
+}
+
 void threadclass::remove_thread(std::shared_ptr<executor_thread> thread)
 {
     threads.erase(std::remove(threads.begin(), threads.end(), thread), threads.end());

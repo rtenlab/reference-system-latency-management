@@ -38,7 +38,12 @@ endif()
 if(${PICAS})
   add_compile_options(-DPICAS)
 endif()
-
+if(${PICAS_THREAD_AFFINITY})
+  add_compile_options(-DPICAS_THREAD_AFFINITY)
+endif()
+if(${LATENCY_MGMT})
+  add_compile_options(-DLATENCY_MGMT)
+endif()
 set(${PROJECT_NAME}_SRCS
   src/rclcpp/any_executable.cpp
   src/rclcpp/callback_group.cpp

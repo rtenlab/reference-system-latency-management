@@ -14,7 +14,7 @@
 std::vector<executor *> executor::instances;
 
 #define LOGGER(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)
-//#define LOGGER(fmt, ...) ((void)0)
+// #define LOGGER(fmt, ...) ((void)0)
 
 extern thread_local size_t thread_id;
 extern thread_local bool is_rt_thread;
@@ -102,9 +102,9 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                     {
                         if (callback->get_branch_id() == branch_id && place_in_chain == 0)
                         {
-                            // Note: Callback is derived from rclcpp::Node which cannot be copied (copy constructor not allowed). 
+                            // Note: Callback is derived from rclcpp::Node which cannot be copied (copy constructor not allowed).
                             //       So, Keep the original callback instance and add its pointer to the new chain
-                            //std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::TIMER, chain->getFirstCallback()->getPeriod(), be_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
+                            // std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::TIMER, chain->getFirstCallback()->getPeriod(), be_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
                             callback->setPeriod(chain->getFirstCallback()->getPeriod());
                             callback->setChainID(be_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
@@ -122,7 +122,7 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                         else if (callback->get_branch_id() == branch_id && place_in_chain > 0)
                         {
                             struct timeval period = {0, 0};
-                            //std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, period, be_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
+                            // std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, period, be_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
                             callback->setPeriod(period);
                             callback->setChainID(be_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
@@ -150,7 +150,7 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                     {
                         if (callback->get_branch_id() == branch_id && place_in_chain == 0)
                         {
-                            //std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::TIMER, chain->getFirstCallback()->getPeriod(), rt_chain_id, place_in_chain++, callback->getPriority(), callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
+                            // std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::TIMER, chain->getFirstCallback()->getPeriod(), rt_chain_id, place_in_chain++, callback->getPriority(), callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
                             callback->setPeriod(chain->getFirstCallback()->getPeriod());
                             callback->setChainID(rt_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
@@ -167,7 +167,7 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                         else if (callback->get_branch_id() == branch_id && place_in_chain > 0)
                         {
                             struct timeval period = {0, 0};
-                            //std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, period, rt_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
+                            // std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, period, rt_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
                             callback->setPeriod(period);
                             callback->setChainID(rt_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
@@ -200,7 +200,15 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
 
 void executor::set_callback_priorities()
 {
+#ifdef LATENCY_MGMT
     int priority = 1;
+#else
+#ifdef PICAS
+    int priority = 2;
+#else
+    int priority = 0;
+#endif
+#endif
     std::cout << "Current Callbacks: " << std::endl;
     // for (auto &chain : chains)
     // {
@@ -211,8 +219,10 @@ void executor::set_callback_priorities()
     this->sorted_be_chains = sorted_chains[1];
     // Update 'chains' with linearized chains
     chains.resize(0);
-    for (auto &chain : sorted_rt_chains) chains.push_back(chain);
-    for (auto &chain : sorted_be_chains) chains.push_back(chain);
+    for (auto &chain : sorted_rt_chains)
+        chains.push_back(chain);
+    for (auto &chain : sorted_be_chains)
+        chains.push_back(chain);
 
     // for each RT chain, assign priority to each callback
     for (auto &chain : sorted_rt_chains)
@@ -238,9 +248,17 @@ void executor::set_callback_priorities()
     {
         for (auto &callback : chain->getCallbacks())
         {
+#ifdef LATENCY_MGMT
             callback->getChain()->getCallback(callback->getUUID())->setPriority(0);
             callback->getChain()->getCallback(callback->getUUID())->setPriorityScheduling(false);
             callback->setPriority(0);
+#else
+#ifdef PICAS
+            callback->getChain()->getCallback(callback->getUUID())->setPriority(1);
+            callback->getChain()->getCallback(callback->getUUID())->setPriorityScheduling(true);
+            callback->setPriority(1);
+#endif
+#endif
         }
         std::cout << "Printing Sorted BE Chain: " << chain->getChainID() << std::endl;
         chain->printChain();
@@ -319,8 +337,8 @@ void executor::start()
         for (auto &callback : chain->getCallbacks())
         {
             callback->start_timer(); // starts only for timer callbacks
-            //set_callback_data(callback->timer_, callback->get_raw_pointer()); // not needed anymore
-            //set_callback_data(callback->subscription_, callback->get_raw_pointer());
+            // set_callback_data(callback->timer_, callback->get_raw_pointer()); // not needed anymore
+            // set_callback_data(callback->subscription_, callback->get_raw_pointer());
         }
     }
     // IMPORTANT: Apply callback-to-thread assignment to rclcpp
@@ -337,7 +355,7 @@ void executor::pause()
         {
             callback->stop_timer();
         }
-    }    
+    }
 }
 
 bool executor::is_running()
@@ -427,7 +445,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
     {
         std::cout << "Creating thread " << i << std::endl;
         std::lock_guard wait_lock{wait_mutex_};
-        //auto thread = std::make_shared<executor_thread>(&global_waitset_mutex, this);
+        // auto thread = std::make_shared<executor_thread>(&global_waitset_mutex, this);
         auto thread = std::make_shared<executor_thread>(&wait_mutex_, this, i); // i: logical_thread_id
         threads.push_back(thread);
     }
@@ -435,7 +453,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
     for (auto &thread : threads)
     {
         // thread->assign_thread_ptr(std::make_shared<std::thread>(&executor_thread::spin, thread));
-        //auto raw_thread = std::make_shared<std::thread>(&executor_thread::spin, thread);
+        // auto raw_thread = std::make_shared<std::thread>(&executor_thread::spin, thread);
         auto raw_thread = std::make_shared<std::thread>(&executor::run, this, thread);
         raw_threads.push_back(raw_thread);
         thread->assign_thread_ptr(raw_thread);
@@ -453,7 +471,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             CPU_SET(num_rt_threads, &cpuSet);
             num_rt_threads--;
 
-            thread->set_affinity(cpuSet, true); 
+            thread->set_affinity(cpuSet, true);
             struct sched_attr attr;
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
@@ -468,6 +486,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             thread->set_sched_deadline(attr, 0);
             thread->set_rt(true);
         }
+#ifdef LATENCY_MGMT
         else if (num_be_threads > 0)
         {
             thread->set_policy(SCHED_DEADLINE);
@@ -492,9 +511,9 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             thread->set_sched_deadline(attr, 0);
             thread->set_rt(false);
         }
-
-        // std::cout << "Thread ID: " << thread->get_threadID() << std::endl;
-        //  thread->assign_thread_ptr(std::make_shared<std::thread>(std::bind(&executor_thread::spin, thread)));
+#endif // LATENCY_MGMT
+       // std::cout << "Thread ID: " << thread->get_threadID() << std::endl;
+       //  thread->assign_thread_ptr(std::make_shared<std::thread>(std::bind(&executor_thread::spin, thread)));
     }
 
     std::cout << "Threads created, waiting for them to finish" << std::endl;
@@ -509,7 +528,8 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
     t->policy = sched_getscheduler(t->threadID);
 
     // Wait for go sign. Needed regardless of PICAS_THREAD_AFFINITY
-    while (!(active_thread_mask & (1 << thread_id))) {
+    while (!(active_thread_mask & (1 << thread_id)))
+    {
         std::unique_lock<std::mutex> lock(thread_sync_mutex);
         if (!(active_thread_mask & (1 << thread_id)))
             thread_sync_cv.wait(lock);
@@ -519,41 +539,47 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
     // - true: priority-based scheduling & refreshing waitset every time
     // - false: standard ROS scheduling
     // NOTE: t->rt may be set after the thread begins run(). So let's check it within the loop.
-    is_rt_thread = t->rt; 
+    is_rt_thread = t->rt;
 
     LOGGER("[run] thread %lu active (is_rt: %d, mask %lx)", thread_id, is_rt_thread, active_thread_mask);
-    while (rclcpp::ok(this->context_) && spinning.load()) {
+    while (rclcpp::ok(this->context_) && spinning.load())
+    {
         rclcpp::AnyExecutable any_exec;
 
 #ifdef PICAS_THREAD_AFFINITY
-        if (!(active_thread_mask & (1 << thread_id))) {
+        if (!(active_thread_mask & (1 << thread_id)))
+        {
             std::unique_lock<std::mutex> lock(thread_sync_mutex);
-            if (!(active_thread_mask & (1 << thread_id))) {
-                //LOGGER("[run] thread %lu - inactive cv wait", thread_id);
+            if (!(active_thread_mask & (1 << thread_id)))
+            {
+                // LOGGER("[run] thread %lu - inactive cv wait", thread_id);
                 thread_sync_cv.wait(lock);
-                //thread_sync_cv.wait_for(lock, std::chrono::milliseconds(10));
+                // thread_sync_cv.wait_for(lock, std::chrono::milliseconds(10));
                 continue;
             }
         }
 #endif
         {
-            //LOGGER("[run] thread %lu", thread_id);
+            // LOGGER("[run] thread %lu", thread_id);
             std::lock_guard wait_lock{wait_mutex_};
-            //LOGGER("[run] thread %lu - lock acquired", thread_id);
-            if (!rclcpp::ok(this->context_) || !spinning.load()) {
+            // LOGGER("[run] thread %lu - lock acquired", thread_id);
+            if (!rclcpp::ok(this->context_) || !spinning.load())
+            {
                 return;
             }
-            if (!get_next_executable(any_exec, next_exec_timeout_)) {
+            if (!get_next_executable(any_exec, next_exec_timeout_))
+            {
                 continue;
             }
         }
-        //LOGGER("[run] thread %lu - get next executable", thread_id);
-        if (yield_before_execute_) {
+        // LOGGER("[run] thread %lu - get next executable", thread_id);
+        if (yield_before_execute_)
+        {
             std::this_thread::yield();
         }
 
         execute_any_executable(any_exec);
-        //execute_and_time(any_exec); 
+        // execute_and_time(any_exec);
 
         // Clear the callback_group to prevent the AnyExecutable destructor from
         // resetting the callback group `can_be_taken_from`
@@ -561,7 +587,6 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
     }
     LOGGER("[run] thread %lu EXIT (rclcpp::ok %d, spinning %d)", thread_id, rclcpp::ok(this->context_), spinning.load());
 }
-
 
 /*
 executor::executor(int num_threads, bool partitioned)
@@ -646,14 +671,16 @@ void executor::schedule_timer_callback(std::shared_ptr<Callback> callback)
 */
 
 executor::executor(int num_threads)
- : MultiThreadedExecutor(rclcpp::ExecutorOptions(), num_threads)
+    : MultiThreadedExecutor(rclcpp::ExecutorOptions(), num_threads)
 {
     executor::register_instance(this);
     signal(SIGINT, executor::handle_sigint);
     // Turns on PICAS priority-based callback scheduling in rclcpp
     // Once turned on, any thread with is_rt_thread == true uses priority scheduling.
     // Threads with is_rt_thread == false still follows standard ROS scheduling
-    this->enable_callback_priority(); 
+#ifdef PICAS_THREAD_AFFINITY
+    this->enable_callback_priority();
+#endif
     make_threads(num_threads);
 }
 
@@ -719,7 +746,8 @@ void executor::add_all_callbacks_to_all_threads()
 {
     for (auto &thread : threads)
     {
-        if (!thread->rt) continue; // FIXME: I guess BE threads don't have enough budget to run callbacks for profiling
+        if (!thread->rt)
+            continue; // FIXME: I guess BE threads don't have enough budget to run callbacks for profiling
         for (auto &chain : chains)
         {
             for (auto &callback : chain->getCallbacks())
@@ -747,8 +775,10 @@ void executor::remove_all_callbacks_from_thread(int threadID)
 void executor::apply_callback_to_thread_assignment()
 {
     std::lock_guard wait_lock{wait_mutex_};
-    for (auto &chain : chains) {
-        for (auto &callback : chain->getCallbacks()) {
+    for (auto &chain : chains)
+    {
+        for (auto &callback : chain->getCallbacks())
+        {
             callback->set_callback_affinity(0);
         }
     }
@@ -758,20 +788,21 @@ void executor::apply_callback_to_thread_assignment()
     {
         auto callbacks = thread->get_callbacks();
         LOGGER("[cb to thread] thread %d: callbacks.size = %lu, rt = %d", thread->logical_thread_id, callbacks.size(), thread->rt);
-        for (auto it = callbacks.begin(); it != callbacks.end(); it++) 
+        for (auto it = callbacks.begin(); it != callbacks.end(); it++)
         {
             uint64_t mask = it->second->get_callback_affinity();
             mask |= 1 << thread->logical_thread_id;
             it->second->set_callback_affinity(mask);
             LOGGER("[cb to thread] thread %d: chain %d callback %d (mask %lx)", thread->logical_thread_id, it->second->getChainID(), it->second->getPlaceInChain(), mask);
         }
-        if (callbacks.size() > 0) active_thread_mask |= 1 << thread->logical_thread_id;
+        if (callbacks.size() > 0)
+            active_thread_mask |= 1 << thread->logical_thread_id;
     }
     // IMPORTANT: notify which threads are active
 #ifdef PICAS_THREAD_AFFINITY
-    update_active_threads(active_thread_mask);    
+    update_active_threads(active_thread_mask);
 #else
-    update_active_threads(-1);    
+    update_active_threads(-1);
 #endif
 }
 
@@ -866,19 +897,19 @@ static inline void timespec_to_timeval(struct timespec *ts, struct timeval *tv)
     timersub(&end_tv, &start_tv, &execution_time);
     // std::cout << "Callback: " << callback->getName() << " executed in " << execution_time.tv_sec << "s " << execution_time.tv_usec << "us by thread: " << std::this_thread::get_id() << std::endl;
     void *ptr = NULL;
-    if (any_exec.timer) { 
-        ptr = any_exec.timer->callback_data; 
-        //if (ptr) LOGGER("[execute_and_time] timer prio %d, affinity %lx", any_exec.timer->callback_priority, any_exec.timer->callback_affinity); 
+    if (any_exec.timer) {
+        ptr = any_exec.timer->callback_data;
+        //if (ptr) LOGGER("[execute_and_time] timer prio %d, affinity %lx", any_exec.timer->callback_priority, any_exec.timer->callback_affinity);
     }
-    else if (any_exec.subscription) { 
-        ptr = any_exec.subscription->callback_data; 
-        //if (ptr) LOGGER("[execute_and_time] subscription prio %d, affinity %lx", any_exec.subscription->callback_priority, any_exec.subscription->callback_affinity); 
+    else if (any_exec.subscription) {
+        ptr = any_exec.subscription->callback_data;
+        //if (ptr) LOGGER("[execute_and_time] subscription prio %d, affinity %lx", any_exec.subscription->callback_priority, any_exec.subscription->callback_affinity);
     }
     else if (any_exec.service) ptr = any_exec.service->callback_data;
     else if (any_exec.client) ptr = any_exec.client->callback_data;
-    else if (any_exec.waitable) { 
-        ptr = any_exec.waitable->callback_data; 
-        //if (ptr) LOGGER("[execute_and_time] waitable prio %d, affinity %lx", any_exec.waitable->callback_priority, any_exec.waitable->callback_affinity); 
+    else if (any_exec.waitable) {
+        ptr = any_exec.waitable->callback_data;
+        //if (ptr) LOGGER("[execute_and_time] waitable prio %d, affinity %lx", any_exec.waitable->callback_priority, any_exec.waitable->callback_affinity);
     }
     if (ptr) {
         Callback* callback = (Callback*)ptr;

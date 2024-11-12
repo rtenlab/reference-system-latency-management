@@ -29,6 +29,7 @@ class threadclass
         void apply_budgets(int budget_us);
         int assign_chain(std::shared_ptr<Chain> chain);
         void add_chain(std::shared_ptr<Chain> chain);
+        void remove_chain(std::shared_ptr<Chain> chain);
         std::vector<std::shared_ptr<Chain>> get_chains();
         void set_period(int period);
         int get_period();

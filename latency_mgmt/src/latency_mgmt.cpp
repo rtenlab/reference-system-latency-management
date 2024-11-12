@@ -230,6 +230,7 @@ int main(int argc, char * argv[])
     // Profile callback execution time
     ex.add_all_callbacks_to_all_threads();
     ex.start();
+    #ifdef LATENCY_MGMT
     std::this_thread::sleep_for(std::chrono::seconds(3));
     // Pause timer callbacks and wait for a second to finish remaining callbacks
     ex.pause();
@@ -254,6 +255,7 @@ int main(int argc, char * argv[])
     }
 
     mpc_thread.join();
+    #endif // latency_mgmt
     ex.join();
 
     rclcpp::shutdown();

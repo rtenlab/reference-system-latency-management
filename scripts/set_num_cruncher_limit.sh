@@ -28,7 +28,7 @@ DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 
 cd $DIR
 sed -i "s/^ *static constexpr uint64_t DEFAULT_NUMBER_CRUNCHER_LIMIT = [0-9]*;/  static constexpr uint64_t DEFAULT_NUMBER_CRUNCHER_LIMIT = $1;/" ../autoware_reference_system/include/autoware_reference_system/system/timing/default.hpp
-echo "Executing number cruncher benchmark with limit: $1"
+echo "Executing number cruncher benchmark for $2 iterations with limit: $1"
 #source ~/ros2_humble/install/setup.bash
 #source ../install/setup.bash
 
