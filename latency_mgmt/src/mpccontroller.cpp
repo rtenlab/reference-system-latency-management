@@ -31,12 +31,23 @@ void MPCController::run()
             {
                 for (auto &chain : tc->chains)
                 {
+                    std::cout << "Controller evaluating chain " << chain->getChainID() << std::endl;
+
                     uint64_t chain_response_time = 0;
-                    for (auto &callback : chain->getCallbacks())
-                    {
-                        chain_response_time += callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
-                    }
+                    // for (auto &callback : chain->getCallbacks())
+                    // {
+                    //     auto temp_rt = callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
+                    //     chain_response_time += temp_rt;
+                    //     std::cout << "Callback " << callback->getName() << " response time: " << temp_rt << std::endl;
+                    // }
+                    chain_response_time = chain->getFirstCallback()->getChain()->getChainResponseTime(0);
+                    std::cout << "Chain " << chain->getChainID() << " response time: " << chain_response_time << std::endl;
+                    std::cout << "Chain " << chain->getChainID() << " deadline: " << chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec << std::endl;
                     if (chain_response_time > chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec && chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec != 0)
+                    {
+                        reduce_rt_budget(tc, current_state);
+                    }
+                    else if (first_run)
                     {
                         reduce_rt_budget(tc, current_state);
                     }
@@ -365,7 +376,6 @@ double MPCController::compute_chain_utilization(std::shared_ptr<Chain> chain, St
     return utilization / (chain->getPeriod().tv_sec * 1e6 + chain->getPeriod().tv_usec);
 }
 
-
 void MPCController::create_threadclass(void)
 {
     State current_state = exec->get_state();
@@ -670,10 +680,12 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
         for (auto &chain : chainset)
         {
             auto chain_response_time = 0;
-            for (auto &callback : chain->getCallbacks())
-            {
-                chain_response_time += callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
-            }
+            // for (auto &callback : chain->getCallbacks())
+            // {
+            //     chain_response_time += callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
+            // }
+            auto temp_chain = chain->getFirstCallback()->getChain();
+            chain_response_time = temp_chain->getChainResponseTime(0);
             /* FIXME: map entry cannot be found by current_state...
             std::deque<struct timeval> dq = chain->get_branch_response_time_history(current_state, 0); // all chains linear at this point
             for (auto& val : dq)

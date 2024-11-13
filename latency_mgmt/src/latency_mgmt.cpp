@@ -34,7 +34,7 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
     RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "PID: %ld run in ROS2.", gettid());
 
-    int n_cpus = 5;
+    int n_cpus = 4;
     executor ex(n_cpus);
 
     auto chain1_2 = std::make_shared<Chain>(0);
@@ -70,7 +70,7 @@ int main(int argc, char * argv[])
     chain1_2->setPeriod({0, 200000});
     chain1_2->setDeadline({0, 200000});
     std::vector<int> chain_criticalities;
-    chain_criticalities.push_back(1);
+    chain_criticalities.push_back(2);
     chain_criticalities.push_back(0);
     chain1_2->setPriorities(chain_criticalities);
 
@@ -95,7 +95,7 @@ int main(int argc, char * argv[])
     chain3_4->setPeriod({0, 100000});
     chain3_4->setDeadline({0, 100000});
     std::vector<int> chain_criticalities2;
-    chain_criticalities2.push_back(2);
+    chain_criticalities2.push_back(3);
     chain_criticalities2.push_back(0);
     chain3_4->setPriorities(chain_criticalities2);
 
@@ -128,14 +128,14 @@ int main(int argc, char * argv[])
     c3_cb1->setChain(chain7);
     c3_cb2->setChain(chain7);
     c3_cb3->setChain(chain7);
-    chain7->setLatencyTarget({0, 0}, 0, false);
+    chain7->setLatencyTarget({0, 200000}, 0, true);
     chain7->addCallback(c3_cb1);
     chain7->addCallback(c3_cb2);
     chain7->addCallback(c3_cb3);
     chain7->setPeriod({0, 200000});
     chain7->setDeadline({0, 200000});
     std::vector<int> chain_criticalities4;
-    chain_criticalities4.push_back(0);
+    chain_criticalities4.push_back(1);
     chain7->setPriorities(chain_criticalities4);
 
     auto chain8_9_10 = std::make_shared<Chain>(4);
@@ -231,7 +231,7 @@ int main(int argc, char * argv[])
     ex.add_all_callbacks_to_all_threads();
     ex.start();
     #ifdef LATENCY_MGMT
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
     // Pause timer callbacks and wait for a second to finish remaining callbacks
     ex.pause();
     std::this_thread::sleep_for(std::chrono::seconds(1));

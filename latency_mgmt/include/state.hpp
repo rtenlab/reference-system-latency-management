@@ -158,7 +158,10 @@ public:
             return true;
         }
         return false;
-    
+    }
+    bool operator==(const State &other) const
+    {
+        return !(*this != other);
     }
 
 private:

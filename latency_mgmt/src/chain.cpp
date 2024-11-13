@@ -217,38 +217,79 @@ std::shared_ptr<Callback> Chain::getCallback(boost::uuids::uuid callbackUUID)
     return nullptr;
 }
 
+uint64_t Chain::getChainResponseTime(int branch_id)
+{
+    // get worst case response time from history
+    uint64_t response_time = 0;
+    std::cout << "Chain ID: " << chainID << " Branch ID: " << branch_id << std::endl;
+    std::cout << "Chain Response Time History Size: " << chainResponseTimeHistory.size() << std::endl;
+    if (branch_id >= chainResponseTimeHistory.size())
+    {
+        return response_time;
+    }
+    // sort the chainResponseTimeHistory
+    std::deque<struct timeval> sorted_chainResponseTimeHistory = chainResponseTimeHistory[branch_id];
+    std::sort(sorted_chainResponseTimeHistory.begin(), sorted_chainResponseTimeHistory.end(), [](struct timeval a, struct timeval b)
+              { return a.tv_sec * 1e6 + a.tv_usec < b.tv_sec * 1e6 + b.tv_usec; });
+    // get the 95th percentile
+    int percentileIndex = static_cast<int>(0.95 * sorted_chainResponseTimeHistory.size());
+    if (sorted_chainResponseTimeHistory.size() > 0)
+    {
+        response_time = sorted_chainResponseTimeHistory[percentileIndex].tv_sec * 1e6 + sorted_chainResponseTimeHistory[percentileIndex].tv_usec;
+    }
+    return response_time;
+}
+
+
 void Chain::add_response_time_to_history(State current_state, size_t branch_id, struct timeval execution_time)
 {
-    // Ensure that current_state exists in the branch_chain_history map
-    if (branch_chain_history.find(current_state) == branch_chain_history.end())
+    if(branch_id >= chainResponseTimeHistory.size())
     {
-        // If it doesn't exist, insert a new vector of deques for the current_state
-        branch_chain_history[current_state] = std::vector<std::deque<struct timeval>>();
+        chainResponseTimeHistory.resize(branch_id + 1);
     }
-
-    // Ensure the vector is large enough to accommodate the branch_id index
-    if (branch_chain_history[current_state].size() <= branch_id)
+    if (chainResponseTimeHistory[branch_id].size() >= 100)
     {
-        // Resize the vector to accommodate the branch_id
-        branch_chain_history[current_state].resize(branch_id + 1);
+        chainResponseTimeHistory[branch_id].pop_front();
     }
+    chainResponseTimeHistory[branch_id].push_back(execution_time);
 
-    // Now it's safe to push_back the execution_time into the appropriate deque
+    // // Ensure that current_state exists in the branch_chain_history map
+    // if (branch_chain_history.find(current_state) == branch_chain_history.end())
+    // {
+    //     // If it doesn't exist, insert a new vector of deques for the current_state
+    //     branch_chain_history[current_state] = std::vector<std::deque<struct timeval>>();
+    // }
+
+    // // Ensure the vector is large enough to accommodate the branch_id index
+    // if (branch_chain_history[current_state].size() <= branch_id)
+    // {
+    //     // Resize the vector to accommodate the branch_id
+    //     branch_chain_history[current_state].resize(branch_id + 1);
+    // }
+
+    // // Now it's safe to push_back the execution_time into the appropriate deque
+    // // branch_chain_history[current_state][branch_id].push_back(execution_time);
+    // if (branch_chain_history[current_state][branch_id].size() >= 10)
+    // {
+    //     branch_chain_history[current_state][branch_id].pop_front();
+    // }
     // branch_chain_history[current_state][branch_id].push_back(execution_time);
-    if (branch_chain_history[current_state][branch_id].size() >= 10)
-    {
-        branch_chain_history[current_state][branch_id].pop_front();
-    }
-    branch_chain_history[current_state][branch_id].push_back(execution_time);
+
 }
 
 std::deque<struct timeval> Chain::get_branch_response_time_history(State current_state, size_t branch_id)
 {
-    if (branch_chain_history.find(current_state) == branch_chain_history.end())
+    // if (branch_chain_history.find(current_state) == branch_chain_history.end())
+    // {
+    //     return std::deque<struct timeval>();
+    // }
+    // return branch_chain_history[current_state][branch_id];
+    if(branch_id >= chainResponseTimeHistory.size())
     {
         return std::deque<struct timeval>();
     }
-    return branch_chain_history[current_state][branch_id];
+    return chainResponseTimeHistory[branch_id];
+
 }
 
 #endif // CHAIN_CPP

@@ -64,6 +64,7 @@ public:
     void add_response_time_to_history(State current_state, size_t branch_id, struct timeval execution_time);
     std::deque<struct timeval> get_branch_response_time_history(State current_state, size_t branch_id);
 
+    uint64_t getChainResponseTime(int branch_id);
 
 private:
     int chainID;
@@ -80,7 +81,7 @@ private:
     std::vector<struct timeval> branch_latency_targets;
     std::map<State, std::vector<std::deque<struct timeval>>> branch_chain_history;
     std::deque<struct timeval> chainExecutionTimeHistory; // History of chain execution times
-
+    std::vector<std::deque<struct timeval>> chainResponseTimeHistory; // History of chain response times
 };
 
 #endif // CHAIN_HPP

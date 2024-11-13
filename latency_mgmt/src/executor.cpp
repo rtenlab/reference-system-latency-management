@@ -440,7 +440,11 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
         num_threads = std::thread::hardware_concurrency() - 1;
     }
     int num_rt_threads = num_threads;
+#ifdef LATENCY_MGMT
     int num_be_threads = num_threads;
+#else
+    int num_be_threads = 0;
+#endif
     for (int i = 0; i < num_rt_threads + num_be_threads; i++)
     {
         std::cout << "Creating thread " << i << std::endl;

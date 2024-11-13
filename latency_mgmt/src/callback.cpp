@@ -205,9 +205,10 @@ void Callback::addExecutionTimeToHistory(const State &state, const timeval &exec
     if(non_state_aware_ex_time_history.size() > 100){
         non_state_aware_ex_time_history.pop_front();
     }
-    std::cout << "Added execution time to history for callback: " 
+    /*std::cout << "Added execution time to history for callback: " 
         << "(cb_prio " << priority << ", thread " << thread_id << ", rt " << is_rt_thread << ", seq " << getSequenceNumber() << ") "
         << name << ": " << executionTime.tv_sec << "s " << executionTime.tv_usec << "us" << std::endl;
+    */
 }
 
 std::deque<struct timeval> Callback::getExecutionTimeHistory(const State &state) {
