@@ -34,8 +34,11 @@ public:
     double MLP(double, std::vector<std::shared_ptr<Chain>>, int, double, State);
     void create_threadclass(void);
     double compute_chain_utilization(std::shared_ptr<Chain> chain, State current_state);
-    void reduce_rt_budget(std::shared_ptr<threadclass> tc, const State& current_state);
-    void reallocate_chains();
+    void reduce_rt_budget(std::shared_ptr<threadclass> tc, const State& current_state, unsigned int* analysis_count);
+    void reallocate_chains(unsigned int* analysis_count);
+    void update_tc_utilization(std::shared_ptr<threadclass> tc, State current_state);
+    void reallocate_be_chains();
+    void verify_starvation_freedom(std::shared_ptr<threadclass> tc, State current_state);
     std::vector<struct timeval> pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget, State current_state);
 private:
     executor *exec;

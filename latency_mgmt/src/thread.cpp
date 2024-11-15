@@ -408,7 +408,7 @@ int executor_thread::set_sched_deadline(struct sched_attr attr, unsigned int fla
     attr.sched_runtime = attr_2.sched_runtime;
     attr.sched_period = attr_2.sched_period;
     attr.sched_deadline = attr_2.sched_deadline;
-    attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
+    attr.sched_flags = attr_2.sched_flags; // reclaim
     attr.sched_nice = 0;
     attr.sched_priority = 0;
     attr.sched_util_min = 0;

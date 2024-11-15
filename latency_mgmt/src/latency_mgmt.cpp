@@ -213,6 +213,38 @@ int main(int argc, char * argv[])
     chain_criticalities7.push_back(0);
     chain13->setPriorities(chain_criticalities7);
 
+
+
+
+/*test with adding additional BE chains*/
+    // auto chain14_15 = std::make_shared<Chain>(7);
+    // auto c7_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 120000}, 5, 1, 1, "pointcloud_map", "", "c7_cb1", 128000);
+    // auto c7_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, "pointcloud_map_loader", "c7_cb1", "c7_cb2", 128000);
+    // auto c7_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 3, 5, 0, "ndt_localizer", "c7_cb2", "c7_cb3", 128000, true);
+    // auto c7_cb4 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 4, 7, 0, "lanelet_2_global_planner_input", "c7_cb3", "", 128000);
+    // auto c7_cb5 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 4, 18, 1, "behavior_planner_input_5", "c7_cb3", "", 128000);
+    // c7_cb1->setChain(chain14_15);
+    // c7_cb2->setChain(chain14_15);
+    // c7_cb3->setChain(chain14_15);
+    // c7_cb4->setChain(chain14_15);
+    // c7_cb5->setChain(chain14_15);
+    // chain14_15->setLatencyTarget({0, 0}, 0, false);
+    // chain14_15->setLatencyTarget({0, 0}, 1, false);
+    // chain14_15->addCallback(c7_cb1);
+    // chain14_15->addCallback(c7_cb2);
+    // chain14_15->addCallback(c7_cb3);
+    // chain14_15->addCallback(c7_cb4);
+    // chain14_15->addCallback(c7_cb5);
+    // chain14_15->setPeriod({0, 120000});
+    // chain14_15->setDeadline({0, 120000});
+    // std::vector<int> chain_criticalities8;
+    // chain_criticalities8.push_back(0);
+    // chain_criticalities8.push_back(0);
+    // chain14_15->setPriorities(chain_criticalities8);
+
+
+/* end */
+
     ex.add_chain(chain1_2);
     ex.add_chain(chain3_4);
     ex.add_chain(chain5_6);
@@ -220,7 +252,7 @@ int main(int argc, char * argv[])
     ex.add_chain(chain8_9_10);
     ex.add_chain(chain11_12);
     ex.add_chain(chain13);
-
+    //ex.add_chain(chain14_15);
     ex.set_callback_priorities();
     std::cout << std::endl
               << "Printing chains from executor" << std::endl;
@@ -229,9 +261,10 @@ int main(int argc, char * argv[])
 
     // Profile callback execution time
     ex.add_all_callbacks_to_all_threads();
+    ex.disable_callback_priority();
     ex.start();
-    #ifdef LATENCY_MGMT
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+#ifdef LATENCY_MGMT
+    std::this_thread::sleep_for(std::chrono::seconds(15));
     // Pause timer callbacks and wait for a second to finish remaining callbacks
     ex.pause();
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -255,7 +288,7 @@ int main(int argc, char * argv[])
     }
 
     mpc_thread.join();
-    #endif // latency_mgmt
+#endif // latency_mgmt
     ex.join();
 
     rclcpp::shutdown();

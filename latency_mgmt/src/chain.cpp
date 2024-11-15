@@ -221,8 +221,8 @@ uint64_t Chain::getChainResponseTime(int branch_id)
 {
     // get worst case response time from history
     uint64_t response_time = 0;
-    std::cout << "Chain ID: " << chainID << " Branch ID: " << branch_id << std::endl;
-    std::cout << "Chain Response Time History Size: " << chainResponseTimeHistory.size() << std::endl;
+    // std::cout << "Chain ID: " << chainID << " Branch ID: " << branch_id << std::endl;
+    // std::cout << "Chain Response Time History Size: " << chainResponseTimeHistory.size() << std::endl;
     if (branch_id >= chainResponseTimeHistory.size())
     {
         return response_time;
@@ -247,7 +247,7 @@ void Chain::add_response_time_to_history(State current_state, size_t branch_id, 
     {
         chainResponseTimeHistory.resize(branch_id + 1);
     }
-    if (chainResponseTimeHistory[branch_id].size() >= 100)
+    if (chainResponseTimeHistory[branch_id].size() >= 10)
     {
         chainResponseTimeHistory[branch_id].pop_front();
     }

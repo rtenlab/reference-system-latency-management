@@ -200,15 +200,19 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
 
 void executor::set_callback_priorities()
 {
-#ifdef LATENCY_MGMT
+
+// if not defined
+// #if !defined(LATENCY_MGMT) && !defined(PICAS_THREAD_AFFINITY)
+//     std::cout << "Latency management and thread affinity turned off -- skipping callback priority assignment" << std::endl;
+//     return;
+// #endif
+
+#if defined(LATENCY_MGMT)
     int priority = 1;
-#else
-#ifdef PICAS
+#elif defined(PICAS)
     int priority = 2;
-#else
-    int priority = 0;
 #endif
-#endif
+
     std::cout << "Current Callbacks: " << std::endl;
     // for (auto &chain : chains)
     // {
@@ -507,7 +511,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             attr.sched_runtime = 1024;
             attr.sched_period = THREAD_PERIOD;   // 10ms period
             attr.sched_deadline = THREAD_PERIOD; // 10ms deadline
-            attr.sched_flags = 0;
+            attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
             attr.sched_nice = 0;
             attr.sched_priority = 0;
             attr.sched_util_min = 0;
@@ -1090,10 +1094,35 @@ void executor::update_waitset_partitioned()
     partitioned_mutex.unlock(); // Unlock the partitioned mutex
 }
 */
+// State executor::get_state()
+// {
+//     State state;
+//     state.chains = chains;
+//     state.num_threads = threads.size();
+//     for (auto &thread : threads)
+//     {
+//         state.thread_prio.push_back(thread->get_priority());
+//         state.thread_policy.push_back(thread->get_policy());
+//         state.sched_deadline_budget.push_back(thread->budget);
+//         state.thread_cpu_set.push_back(*thread->get_cpuSet());
+//     }
+//     state.prioritized = priority_scheduling;
+//     state.partitioned = partitioned;
+//     // makes a list of all the branch targets without branch identifiers ******
+//     for (auto &chain : chains)
+//     {
+//         auto latency_targets = *chain->getLatencyTargets();
+//         for (auto &target : latency_targets)
+//         {
+//             state.chain_latency_targets.push_back(target);
+//         }
+//         // state.chain_latency_targets.push_back(*chain->getLatencyTargets());
+//     }
+//     return state;
+// }
 State executor::get_state()
 {
     State state;
-    state.chains = chains;
     state.num_threads = threads.size();
     for (auto &thread : threads)
     {
@@ -1104,18 +1133,31 @@ State executor::get_state()
     }
     state.prioritized = priority_scheduling;
     state.partitioned = partitioned;
+
+    // Deep copy chains
+    for (auto &chain : chains)
+    {
+        if (chain != nullptr)
+        {
+            state.chains.push_back(std::make_shared<Chain>(*chain));
+        }
+    }
+
     // makes a list of all the branch targets without branch identifiers ******
     for (auto &chain : chains)
     {
-        auto latency_targets = *chain->getLatencyTargets();
-        for (auto &target : latency_targets)
+        if (chain != nullptr)
         {
-            state.chain_latency_targets.push_back(target);
+            auto latency_targets = *chain->getLatencyTargets();
+            for (auto &target : latency_targets)
+            {
+                state.chain_latency_targets.push_back(target);
+            }
         }
-        // state.chain_latency_targets.push_back(*chain->getLatencyTargets());
     }
     return state;
 }
+
 /*
 void executor::update_waitset()
 {
@@ -1181,17 +1223,27 @@ void executor::update_waitset()
 void executor::add_chain(std::shared_ptr<Chain> chain)
 {
     std::lock_guard wait_lock{wait_mutex_};
+
     if (callback_priority_enabled)
     {
         for (auto &callback : chain->getCallbacks())
         {
+
             callback->setPriorityScheduling(true);
+            callback->exec = this;
+            this->add_node(callback);
+        }
+    }
+    else{
+        for (auto &callback : chain->getCallbacks())
+        {
             callback->exec = this;
             this->add_node(callback);
         }
     }
     chain->setChainID(chains.size());
     chains.push_back(chain);
+
     callback_count += chain->getNumCallbacks();
 }
 
