@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <sys/syscall.h>
 #include <mutex>
+#include <fstream>
 
 #include "trace_picas/trace.hpp"
 
@@ -29,24 +30,61 @@ using std::placeholders::_1;
 
 #define gettid() syscall(__NR_gettid)
 
+// Function to set RT runtime to unlimited
+void set_rt_runtime_unlimited() {
+    std::ofstream ofs("/proc/sys/kernel/sched_rt_runtime_us");
+    if (ofs.is_open()) {
+        ofs << "-1";
+        ofs.close();
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Set RT runtime to unlimited.");
+    } else {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to open /proc/sys/kernel/sched_rt_runtime_us");
+    }
+}
+
+void set_rt_period() {
+    std::ofstream ofs("/proc/sys/kernel/sched_rt_period_us");
+    if (ofs.is_open()) {
+        ofs << "10000";
+        ofs.close();
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Set SCHED_DEADLINE system period to 10ms.");
+    } else {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to open /proc/sys/kernel/sched_rt_period_us");
+    }
+}
+
 int main(int argc, char * argv[])
 {
+    // if not root, exit
+    if (getuid() != 0) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Please run as root.");
+        return -1;
+    }
+
     rclcpp::init(argc, argv);
     RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "PID: %ld run in ROS2.", gettid());
 
-    int n_cpus = 4;
+    // Set RT runtime to unlimited
+     // echo -1 > /proc/sys/kernel/sched_rt_runtime_us
+    set_rt_runtime_unlimited();  
+    // Set SCHED_DEADLINE system period to 10ms
+    // echo 10000 > /proc/sys/kernel/sched_rt_period_us
+    set_rt_period();
+
+    int n_cpus = 2;
     executor ex(n_cpus);
 
     auto chain1_2 = std::make_shared<Chain>(0);
     auto c0_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 0, 1, 22, "front_lidar_driver", "", "c0_cb1", 1000);
     auto c0_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 2, 24, "points_transformer_front", "c0_cb1", "c0_cb2", 65536);
-    auto c0_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 3, 27, 0, "point_cloud_fusion", "c0_cb2", "c0_cb3", 65536, true);
+    //auto c0_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 3, 27, 0, "point_cloud_fusion", "c0_cb2", "c0_cb3", 65536, true);
+    auto c0_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 3, 27, 0, "point_cloud_fusion", "c0_cb2", "c0_cb3", 65536);
     auto c0_cb4 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 4, 27, 0, "ray_ground_filter", "c0_cb3", "c0_cb4", 65536);
     auto c0_cb5 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 5, 28, 0, "euclidean_cluster_detector", "c0_cb4", "c0_cb5", 65536);
     auto c0_cb6 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 6, 29, 0, "object_collision_estimator", "c0_cb5", "c0_cb6", 65536);
     auto c0_cb7 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 7, 30, 0, "behavior_planner_input_0", "c0_cb6", "", 65536); // postfix _0: unique node name needed
-    auto c0_cb8 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 4, 2, 1, "voxel_grid_downsampler", "c0_cb3", "c0_cb8", 65536);
-    auto c0_cb9 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 5, 3, 1, "ndt_localizer_input", "c0_cb8", "", 32768);
+    //auto c0_cb8 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 4, 2, 1, "voxel_grid_downsampler", "c0_cb3", "c0_cb8", 65536);
+    //auto c0_cb9 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 5, 3, 1, "ndt_localizer_input", "c0_cb8", "", 32768);
     c0_cb1->setChain(chain1_2);
     c0_cb2->setChain(chain1_2);
     c0_cb3->setChain(chain1_2);
@@ -54,10 +92,10 @@ int main(int argc, char * argv[])
     c0_cb5->setChain(chain1_2);
     c0_cb6->setChain(chain1_2);
     c0_cb7->setChain(chain1_2);
-    c0_cb8->setChain(chain1_2);
-    c0_cb9->setChain(chain1_2);
+    //c0_cb8->setChain(chain1_2);
+    //c0_cb9->setChain(chain1_2);
     chain1_2->setLatencyTarget({0, 200000}, 0, true);
-    chain1_2->setLatencyTarget({0, 0}, 1, false);
+    //chain1_2->setLatencyTarget({0, 0}, 1, false);
     chain1_2->addCallback(c0_cb1);
     chain1_2->addCallback(c0_cb2);
     chain1_2->addCallback(c0_cb3);
@@ -65,38 +103,39 @@ int main(int argc, char * argv[])
     chain1_2->addCallback(c0_cb5);
     chain1_2->addCallback(c0_cb6);
     chain1_2->addCallback(c0_cb7);
-    chain1_2->addCallback(c0_cb8);
-    chain1_2->addCallback(c0_cb9);
+    //chain1_2->addCallback(c0_cb8);
+    //chain1_2->addCallback(c0_cb9);
     chain1_2->setPeriod({0, 200000});
     chain1_2->setDeadline({0, 200000});
     std::vector<int> chain_criticalities;
     chain_criticalities.push_back(2);
-    chain_criticalities.push_back(0);
+    //chain_criticalities.push_back(0);
     chain1_2->setPriorities(chain_criticalities);
 
     auto chain3_4 = std::make_shared<Chain>(1);
-    auto c1_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 1, 1, 32, 0, "behavior_planner_timer", "", "c1_cb1", 1000, true);
+    //auto c1_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 1, 1, 32, 0, "behavior_planner_timer", "", "c1_cb1", 1000, true);
+    auto c1_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 1, 1, 32, 0, "behavior_planner_timer", "", "c1_cb1", 1000);
     auto c1_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 1, 2, 35, 0, "mpc_controller", "c1_cb1", "c1_cb2", 65536);
     auto c1_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 1, 3, 34, 0, "vehicle_interface", "c1_cb2", "c1_cb3", 65536);
     auto c1_cb4 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 1, 4, 25, 0, "vehicle_dbw_system", "c1_cb3", "", 8192);
-    auto c1_cb5 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 1, 2, 33, 1, "vehicle_interface_input", "c1_cb1", "", 32768);
+    //auto c1_cb5 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 1, 2, 33, 1, "vehicle_interface_input", "c1_cb1", "", 32768);
     c1_cb1->setChain(chain3_4);
     c1_cb2->setChain(chain3_4);
     c1_cb3->setChain(chain3_4);
     c1_cb4->setChain(chain3_4);
-    c1_cb5->setChain(chain3_4);
+    //c1_cb5->setChain(chain3_4);
     chain3_4->setLatencyTarget({0, 100000}, 0, true);
-    chain3_4->setLatencyTarget({0, 0}, 1, false);
+    //chain3_4->setLatencyTarget({0, 0}, 1, false);
     chain3_4->addCallback(c1_cb1);
     chain3_4->addCallback(c1_cb2);
     chain3_4->addCallback(c1_cb3);
     chain3_4->addCallback(c1_cb4);
-    chain3_4->addCallback(c1_cb5);
+    //chain3_4->addCallback(c1_cb5);
     chain3_4->setPeriod({0, 100000});
     chain3_4->setDeadline({0, 100000});
     std::vector<int> chain_criticalities2;
     chain_criticalities2.push_back(3);
-    chain_criticalities2.push_back(0);
+    //chain_criticalities2.push_back(0);
     chain3_4->setPriorities(chain_criticalities2);
 
     auto chain5_6 = std::make_shared<Chain>(2);
@@ -247,11 +286,11 @@ int main(int argc, char * argv[])
 
     ex.add_chain(chain1_2);
     ex.add_chain(chain3_4);
-    ex.add_chain(chain5_6);
-    ex.add_chain(chain7);
-    ex.add_chain(chain8_9_10);
-    ex.add_chain(chain11_12);
-    ex.add_chain(chain13);
+    // ex.add_chain(chain5_6);
+    // ex.add_chain(chain7);
+    // ex.add_chain(chain8_9_10);
+    // ex.add_chain(chain11_12);
+    // ex.add_chain(chain13);
     //ex.add_chain(chain14_15);
     ex.set_callback_priorities();
     std::cout << std::endl
@@ -261,13 +300,16 @@ int main(int argc, char * argv[])
 
     // Profile callback execution time
     ex.add_all_callbacks_to_all_threads();
-    ex.disable_callback_priority();
+    ex.enable_callback_priority(); // disable for default
     ex.start();
 #ifdef LATENCY_MGMT
     std::this_thread::sleep_for(std::chrono::seconds(15));
     // Pause timer callbacks and wait for a second to finish remaining callbacks
     ex.pause();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    //std::this_thread::sleep_for(std::chrono::seconds(10));
+    //ex.start();
+    //std::this_thread::sleep_for(std::chrono::seconds(5));
+
     ex.remove_all_callbacks_from_all_threads();
 
     MPCController mpc;

@@ -10,7 +10,7 @@
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
 
-void create_cgroup(const std::string &cgroup_name, const std::string &cpus)
+void executor_thread::create_cgroup(const std::string &cgroup_name, const std::string &cpus)
 {
     std::ofstream cg_file;
     std::string cgroup_path = "/sys/fs/cgroup/cpuset/" + cgroup_name;
@@ -51,7 +51,7 @@ void create_cgroup(const std::string &cgroup_name, const std::string &cpus)
 }
 
 // Function to add a process/thread to a cgroup
-void add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid)
+void executor_thread::add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid)
 {
     std::ofstream cg_file;
     // std::string cgroup_tasks_path = "/sys/fs/cgroup/cpuset/" + cgroup_name + "/cgroup.procs";
@@ -286,15 +286,16 @@ void executor_thread::set_affinity(cpu_set_t cpuSet, bool rt)
     std::stringstream thread_name_stream;
     std::stringstream cpu_core_stream;
 
+    thread_name_stream << "CPU_CG_" << get_first_cpu_from_set(&cpuSet);
     // Format the thread name and CPU core using stringstream
-    if (rt)
-    {
-        thread_name_stream << "RT_Thread_" << get_first_cpu_from_set(&cpuSet);
-    }
-    else
-    {
-        thread_name_stream << "BE_Thread_" << get_first_cpu_from_set(&cpuSet);
-    }
+    // if (rt)
+    // {
+    //     thread_name_stream << "RT_Thread_" << get_first_cpu_from_set(&cpuSet);
+    // }
+    // else
+    // {
+    //     thread_name_stream << "BE_Thread_" << get_first_cpu_from_set(&cpuSet);
+    // }
     cpu_core_stream << get_first_cpu_from_set(&cpuSet);
 
     // Convert stringstream to string and call create_cgroup with the results

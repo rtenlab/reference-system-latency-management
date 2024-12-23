@@ -2,8 +2,9 @@
 #define MPC_CONTROLLER_CPP
 
 #include <mpccontroller.hpp>
-#define THREAD_PERIOD 1000000 // 1ms
-#define THREAD_PERIOD_US 1000 // 1ms
+#define THREAD_PERIOD 10000000 // 10ms
+#define THREAD_PERIOD_US 10000 // 10ms
+#define NS_IN_US 1000
 MPCController::MPCController() {}
 MPCController::~MPCController() {}
 static inline void timespec_to_timeval(struct timespec *ts, struct timeval *tv)
@@ -17,6 +18,26 @@ void MPCController::assign_executor(executor *exec)
     this->exec = exec;
 }
 
+void MPCController::chain_test()
+{
+    // allocate chain 0 to threadgroup 0
+    // allocate chain 1 to threadgroup 1
+
+    for (auto &tg : threadclasses)
+    {
+        tg->chains.clear();
+    }
+    auto chain0 = exec->get_chains()->at(0);
+    auto chain1 = exec->get_chains()->at(1);
+    threadclasses[0]->add_chain(chain0);
+    threadclasses[1]->add_chain(chain1);
+    threadclasses[0]->set_utilization(compute_chain_utilization(chain0, current_state));
+    threadclasses[1]->set_utilization(compute_chain_utilization(chain1, current_state));
+    exec->enable_callback_priority();
+        exec->start();
+
+    exec->apply_callback_to_thread_assignment();
+}
 
 // void MPCController::reallocate_be_chains(){
 //  // for each BE chain, perform a worst fit decreasing assignment to BE threadclass based on utilization
@@ -81,11 +102,13 @@ void MPCController::verify_starvation_freedom(std::shared_ptr<threadclass> tc, S
     // the threadclass is assumed to be BE, check the response times of the chains and see if theyre bounded
     int i = 0;
     static int tries = 0;
-    auto chain_response_times = pwa_cd(tc->chains, tc, tc->total_budget/1000, current_state);
-    for (auto &rt : chain_response_times){
+    auto chain_response_times = pwa_cd(tc->chains, tc, tc->total_budget / NS_IN_US, current_state);
+    for (auto &rt : chain_response_times)
+    {
         auto temp_rt = rt.tv_sec * 1e6 + rt.tv_usec;
         std::cout << "Chain: " << i++ << " Estimated response time: " << temp_rt << std::endl;
-        if(temp_rt >= 8e6 - 100 || temp_rt < 0){
+        if (temp_rt >= 8e6 - 100 || temp_rt < 0)
+        {
             std::cout << "Starvation detected in BE threadclass " << tc->id << std::endl;
             // if(tries == 0){
             // reallocate_be_chains();
@@ -95,21 +118,21 @@ void MPCController::verify_starvation_freedom(std::shared_ptr<threadclass> tc, S
     }
 }
 
-
 void MPCController::run()
 {
-     struct timespec start, end;
+    struct timespec start, end;
     struct timeval start_time, end_time;
-    //gettimeofday(&start_time, NULL);
+    // gettimeofday(&start_time, NULL);
     this->create_threadclass();
-    //gettimeofday(&end_time, NULL);
+    // gettimeofday(&end_time, NULL);
     std::cout << "Threadclass creation time: " << (end_time.tv_sec - start_time.tv_sec) * 1e6 + (end_time.tv_usec - start_time.tv_usec) << std::endl;
     bool first_run = true;
     do
     {
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
-        //gettimeofday(&start_time, NULL);
-        // Get the current state from the executor
+        bool realloc = false;
+        // gettimeofday(&start_time, NULL);
+        //  Get the current state from the executor
         State current_state = exec->get_state();
 
         // Create a new state for the next prediction
@@ -120,13 +143,13 @@ void MPCController::run()
         {
             if (tc->rt_threadclass)
             {
-                if(tc->chains.size() == 0 && first_run)
+                if (tc->chains.size() == 0 && first_run)
                 {
-                    reduce_rt_budget(tc, current_state, &analysis_count);
+                    // realloc = reduce_rt_budget(tc, current_state, &analysis_count) ? true : false;
                 }
                 for (auto &chain : tc->chains)
                 {
-                    //std::cout << "Controller evaluating chain " << chain->getChainID() << std::endl;
+                    // std::cout << "Controller evaluating chain " << chain->getChainID() << std::endl;
 
                     uint64_t chain_response_time = 0;
                     // for (auto &callback : chain->getCallbacks())
@@ -140,23 +163,25 @@ void MPCController::run()
                     // std::cout << "Chain " << chain->getChainID() << " deadline: " << chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec << std::endl;
                     if (chain_response_time > chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec && chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec != 0)
                     {
-                        std::cout << "Timing violation detected in RT chain " << chain->getChainID() <<  std::endl;
+                        std::cout << "Timing violation detected in RT chain " << chain->getChainID() << std::endl;
                         std::cout << "Response time: " << chain_response_time << " Deadline: " << chain->getDeadline().tv_sec * 1e6 + chain->getDeadline().tv_usec << std::endl;
-                        reduce_rt_budget(tc, current_state, &analysis_count);
+                        // realloc = reduce_rt_budget(tc, current_state, &analysis_count) ? true : false;
                     }
                     else if (first_run)
                     {
-                        reduce_rt_budget(tc, current_state, &analysis_count);
+                        realloc = true;
+                        // realloc = reduce_rt_budget(tc, current_state, &analysis_count) ? true : false;
                     }
                 }
             }
-            else{
+            else
+            {
                 analysis_count++;
-                //update_tc_utilization(tc, current_state);
-                verify_starvation_freedom(tc, current_state);
+                // update_tc_utilization(tc, current_state);
+                // verify_starvation_freedom(tc, current_state);
             }
         }
-        //gettimeofday(&end_time, NULL);
+        // gettimeofday(&end_time, NULL);
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
         timespec_to_timeval(&start, &start_time);
         timespec_to_timeval(&end, &end_time);
@@ -183,11 +208,14 @@ void MPCController::run()
         {
             exec->enable_callback_priority();
             exec->start();
+            //exec->apply_callback_to_thread_assignment();
             first_run = false;
         }
-        else
+        else if (realloc)
+        {
+            std::cout << "Reallocation occured, applying thread affinity" << std::endl;
             exec->apply_callback_to_thread_assignment();
-
+        }
         std::this_thread::sleep_for(period);
 
     } while (exec->is_running());
@@ -300,9 +328,8 @@ void MPCController::update_tc_utilization(std::shared_ptr<threadclass> tc, State
     {
         total_utilization += compute_chain_utilization(chain, current_state);
     }
-    tc->utilization = total_utilization / (tc->total_budget/THREAD_PERIOD * tc->threads.size());
+    tc->utilization = total_utilization / (tc->total_budget / THREAD_PERIOD * tc->threads.size());
 }
-
 
 std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget, State current_state)
 {
@@ -320,7 +347,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
         std::cout << "Threadclass budget is 0" << std::endl;
         for (size_t i = 0; i < response_times.size(); i++)
         {
-            response_times[i] = 20e6;
+            response_times[i] = 20e7;
         }
         goto out;
     }
@@ -441,7 +468,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                 k++;
                 break;
             }
-            else if (delta > (double)(1000000)) // thread period
+            else if (delta > (double)(1000000)) // 10 seconds
             {                                   // higher limit
                 // not schedulable
                 response_times[k] = 20e6;
@@ -456,6 +483,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                 delta = 1 + std::floor(W / M);
                 if (delta <= delta_prev)
                 {
+                    // delta = delta_prev + 1;
                     delta = delta_prev + 1;
                     // delta += std::floor(W/M);
                 }
@@ -468,7 +496,7 @@ out:
     {
         struct timeval response_time;
         // if (response_times[i] == -1)
-        if (response_times[i] > 20e6 - 100) // don't compare with 20e6; double is inaccurate
+        if (response_times[i] > 20e6 - 100) // don't compare with 20e7; double is inaccurate
         {
             response_time.tv_sec = -1;
             response_time.tv_usec = -1;
@@ -514,7 +542,7 @@ void MPCController::create_threadclass(void)
             rt_tg->add_thread(thread);
             rt_tg->set_utilization(0);
             rt_tg->set_period(THREAD_PERIOD);
-            rt_tg->apply_budgets(THREAD_PERIOD - 1000);
+            rt_tg->apply_budgets(THREAD_PERIOD - 10240);
             threadclasses.push_back(rt_tg);
         }
         else
@@ -525,12 +553,29 @@ void MPCController::create_threadclass(void)
             be_tg->add_thread(thread);
             be_tg->set_period(THREAD_PERIOD);
             be_tg->set_utilization(0);
-            be_tg->apply_budgets(1000);
+            be_tg->apply_budgets(10240);
             threadclasses.push_back(be_tg);
         }
     }
     std::cout << "Threadclasses created" << std::endl;
-    this->reallocate_chains(&analysis_count);
+    // this->reallocate_chains(&analysis_count);
+    std::cout << "Parsing and sorting chains" << std::endl;
+    std::vector<std::vector<std::shared_ptr<Chain>>> split_chainsets = exec->parse_and_sort_chains(exec->get_chains());
+    std::vector<std::shared_ptr<Chain>> rt_chains = split_chainsets[0];
+    unsigned int num_rt_chains = rt_chains.size();
+    // count the number of RT capable threadgroups
+    for (auto &tg : threadclasses)
+    {
+        if (tg->rt_threadclass == true)
+        {
+            tg->add_chain(rt_chains.at(num_rt_chains - 1));
+            num_rt_chains--;
+            if (num_rt_chains < 0)
+            {
+                return;
+            }
+        }
+    }
 }
 
 void MPCController::reallocate_chains(unsigned int *analysis_count)
@@ -673,7 +718,7 @@ merge_min_tgs:
         // check the schedulability of the chainset with the threadgroup
         std::cout << "Computing chain response times" << std::endl;
         *analysis_count += 1;
-        auto response_times = pwa_cd(existing_chains, min_tg, min_tg->total_budget / 1000, current_state);
+        auto response_times = pwa_cd(existing_chains, min_tg, min_tg->total_budget / NS_IN_US, current_state);
         // debug print response times and deadlines
         for (size_t i = 0; i < response_times.size(); i++)
         {
@@ -763,7 +808,7 @@ merge_min_tgs:
     }
 }
 
-void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const State &current_state, unsigned int *analysis_count)
+bool MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const State &current_state, unsigned int *analysis_count)
 {
     // State current_state = exec->get_state();
     //  basically we need to minimize the budget of the RT threadclass such that all the RT chains are still schedulable
@@ -771,14 +816,18 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
     //  if the chainset is schedulable, we can reduce the budget further
     //  if the chainset is not schedulable, we can increase the budget
     //  we can start with the current budget of the threadclass
-    int min_budget = 1024, max_budget = THREAD_PERIOD, mid_budget = 0;
+
+    // the calculations are with reference to THREAD_PERIOD whose units are nanoseconds
+    // to scale the budget given to the analysis, we divide by 10000 to change our units to us from 10ms
+    int min_budget = 1024 * 10, max_budget = THREAD_PERIOD, mid_budget = 0;
+    volatile int computed_budget = 0;
     int current_budget = tc->total_budget;
-    int best_budget = 1024;
+    int best_budget = 1024 * 10;
     std::vector<std::shared_ptr<Chain>> chainset = tc->get_chains();
     std::vector<struct timeval> response_times;
     std::vector<struct timeval> deadlines;
     std::vector<struct timeval> best_response_times;
-
+    bool realloc = false;
     bool schedulable = true;
 
     if (chainset.size() == 0)
@@ -796,31 +845,34 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
     {
         mid_budget = (min_budget + max_budget) / 2;
         // tc->apply_budgets(mid_budget);
-        //std::cout << "Trying to reduce budget to: " << mid_budget << std::endl;
+        // std::cout << "Trying to reduce budget to: " << mid_budget << std::endl;
         *analysis_count += 1;
-        response_times = pwa_cd(chainset, tc, mid_budget / 1000, current_state);
-        int i = 0;
-        for (auto &chain : chainset)
-        {
-            auto chain_response_time = 0;
-            // for (auto &callback : chain->getCallbacks())
-            // {
-            //     chain_response_time += callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
-            // }
-            auto temp_chain = chain->getFirstCallback()->getChain();
-            chain_response_time = temp_chain->getChainResponseTime(0);
-            /* FIXME: map entry cannot be found by current_state...
-            std::deque<struct timeval> dq = chain->get_branch_response_time_history(current_state, 0); // all chains linear at this point
-            for (auto& val : dq)
-                chain_response_time += val.tv_sec * 1e6 + val.tv_usec;
-            if (dq.size()) chain_response_time /= dq.size();
-            */
+        // mid budget is in nanoseconds
+        // we hvave to convert it to a proportion of thread period, but in microseconds
+        response_times = pwa_cd(chainset, tc, mid_budget / NS_IN_US, current_state);
 
-            // std::cout << "Chain Measured Response Time: " << chain_response_time << std::endl;
-            // std::cout << "Chain Deadline: " << deadlines[i].tv_sec * 1e6 + deadlines[i].tv_usec << std::endl;
-            // std::cout << "Chain Predicted Response Time: " << response_times[i].tv_sec * 1e6 + response_times[i].tv_usec << std::endl;
-            i++;
-        }
+        // int i = 0;
+        // for (auto &chain : chainset)
+        // {
+        //     auto chain_response_time = 0;
+        //     // for (auto &callback : chain->getCallbacks())
+        //     // {
+        //     //     chain_response_time += callback->getExecutionTime(current_state).tv_sec * 1e6 + callback->getExecutionTime(current_state).tv_usec;
+        //     // }
+        //     auto temp_chain = chain->getFirstCallback()->getChain();
+        //     chain_response_time = temp_chain->getChainResponseTime(0);
+        //     /* FIXME: map entry cannot be found by current_state...
+        //     std::deque<struct timeval> dq = chain->get_branch_response_time_history(current_state, 0); // all chains linear at this point
+        //     for (auto& val : dq)
+        //         chain_response_time += val.tv_sec * 1e6 + val.tv_usec;
+        //     if (dq.size()) chain_response_time /= dq.size();
+        //     */
+
+        //     // std::cout << "Chain Measured Response Time: " << chain_response_time << std::endl;
+        //     // std::cout << "Chain Deadline: " << deadlines[i].tv_sec * 1e6 + deadlines[i].tv_usec << std::endl;
+        //     // std::cout << "Chain Predicted Response Time: " << response_times[i].tv_sec * 1e6 + response_times[i].tv_usec << std::endl;
+        //     i++;
+        // }
 
         // std::cout << "Response times: " << std::endl;
         //  for (size_t i = 0; i < response_times.size(); i++)
@@ -846,32 +898,44 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
         {
             max_budget = mid_budget;
             best_response_times.clear();
-            for (auto & rt : response_times)
+            for (auto &rt : response_times)
             {
                 best_response_times.push_back(rt);
             }
-            //best_budget = mid_budget;
+            // best_budget = mid_budget;
         }
         else
         {
-            min_budget = mid_budget + 1000; // increment by 1ms
+            // min_budget = mid_budget + 1000; // increment by 1us
+            min_budget = mid_budget + 100000; // increment by 200us
+            if (mid_budget > max_budget)
+            {
+                best_budget = mid_budget;
+            }
         }
     }
-
     best_budget = std::max(min_budget, std::min(mid_budget, max_budget));
+    // if(best_budget != computed_budget){
+    //     std::cerr << "Computed budget: " << computed_budget << " Best budget: " << best_budget << std::endl;
+    //     schedulable = false;
+    // }
+    // best_budget*=1000;
     // we only care if the best budget is schedulable
     // basically if the budget is < max, it is schedulable
-    if(best_budget <= THREAD_PERIOD){
+    if (best_budget <= THREAD_PERIOD)
+    {
         schedulable = true;
         int i = 0;
-        for(auto &chain : chainset){
-            std::cout << "Chain: " << chain->getChainID() << " Prio: " << chain->getBranchPriority(0) << " Estimated WCRT: " << best_response_times[i].tv_sec *1e6 + best_response_times[i].tv_usec << " us" <<  " With budget: " << best_budget << " On RT threadclass: " << tc->id << std::endl;
+        for (auto &chain : chainset)
+        {
+            std::cout << "Chain: " << chain->getChainID() << " Prio: " << chain->getBranchPriority(0) << " Estimated WCRT: " << best_response_times[i].tv_sec * 1e6 + best_response_times[i].tv_usec << " us" << " With budget: " << best_budget << " On RT threadclass: " << tc->id << std::endl;
         }
     }
-    else{
+    else
+    {
         schedulable = false;
     }
-    
+
     static int tries = 0;
     if (schedulable == false)
     {
@@ -916,12 +980,14 @@ void MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, const Stat
             be_tc->add_chain(least_critical_chain);
             be_tc->set_utilization(be_tc->get_utilization() + compute_chain_utilization(least_critical_chain, current_state));
             std::cout << "Demoted chain " << least_critical_chain->getChainID() << " to BE threadclass " << be_tc->id << " with utilization: " << be_tc->get_utilization() << std::endl;
+            realloc = true;
         }
         else
         {
             std::cerr << "Chainset for threadclass " << tc->id << " is not schedulable after reallocation. Trying to reallocate chains." << std::endl;
+            realloc = true;
             reallocate_chains(analysis_count);
-            return;
+            return realloc;
         }
     }
     // now assign the budget to the threadclass
@@ -945,13 +1011,15 @@ empty_rt_chain:
         attr.sched_runtime = best_budget;
         attr.sched_period = THREAD_PERIOD;
         attr.sched_deadline = THREAD_PERIOD;
-        if(tc->rt_threadclass){
+        if (tc->rt_threadclass)
+        {
             attr.sched_flags = 0;
         }
-        else{
+        else
+        {
             attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
         }
-        //attr.sched_flags = 0;
+        // attr.sched_flags = 0;
         attr.sched_nice = 0;
         attr.sched_priority = 0;
         attr.sched_util_min = 0;
@@ -980,7 +1048,7 @@ empty_rt_chain:
     if (be_tc == nullptr)
     {
         std::cerr << "Error: BE threadclass not found for RT threadclass" << std::endl;
-        return;
+        return false;
     }
     else
     {
@@ -1028,11 +1096,11 @@ empty_rt_chain:
         std::cout << "BE Threadclass " << be_tc->id << " is not overloaded, expect bounded performance" << std::endl;
     }
     *analysis_count += 1;
-    auto be_response_times = pwa_cd(be_tc->get_chains(), be_tc, be_tc->total_budget / 1000, current_state);
+    auto be_response_times = pwa_cd(be_tc->get_chains(), be_tc, be_tc->total_budget / NS_IN_US, current_state);
     std::cout << "BE Threadclass " << be_tc->id << " response times: " << std::endl;
     for (size_t i = 0; i < be_response_times.size(); i++)
     {
-        if (be_response_times[i].tv_sec * 1e6 + be_response_times[i].tv_usec > 20e6 - 100) // don't compare with 20e6; double is inaccurate
+        if (be_response_times[i].tv_sec * 1e6 + be_response_times[i].tv_usec > 20e7 - 100) // don't compare with 20e7; double is inaccurate
         {
             std::cerr << "BE Chain " << i << " is not starvation free" << std::endl;
         }
@@ -1042,6 +1110,7 @@ empty_rt_chain:
             std::cout << "Estimated Response Time for Chain " << i << ": " << be_response_times[i].tv_sec << "s " << be_response_times[i].tv_usec << "us" << std::endl;
         }
     }
+    return realloc;
     //}
     //}
 }

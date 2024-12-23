@@ -7,7 +7,7 @@
 #include "test_interfaces/msg/test_string.hpp"
 
 #define USE_INTRA_PROCESS_COMMS false
-//#define USE_INTRA_PROCESS_COMMS true // TODO: intra comm doesn't seem to work properly for BE threads (is_rt_thread == false) with PICAS_THREAD_AFFINITY
+// #define USE_INTRA_PROCESS_COMMS true // TODO: intra comm doesn't seem to work properly for BE threads (is_rt_thread == false) with PICAS_THREAD_AFFINITY
 using std::placeholders::_1;
 
 extern thread_local size_t thread_id;
@@ -51,10 +51,12 @@ Callback::Callback(CallbackType type, struct timeval period, int chainID, int pl
 {
     uuid = boost::uuids::random_generator()(); // Generate a random UUID for the Callback
     setPeriod(period);
-    if (sub_topic != "") {
+    if (sub_topic != "")
+    {
         subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1));
     }
-    if (pub_topic != "") {
+    if (pub_topic != "")
+    {
         publisher_ = this->create_publisher<test_interfaces::msg::TestString>(pub_topic, 1);
     }
 }
@@ -65,35 +67,54 @@ Callback::Callback(CallbackType type, struct timeval period, int chainID, int pl
 {
     uuid = boost::uuids::random_generator()(); // Generate a random UUID for the Callback
     setPeriod(period);
-    if (sub_topic != "") {
+    if (sub_topic != "")
+    {
         subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1));
     }
-    if (pub_topic != "") {
+    if (pub_topic != "")
+    {
         publisher_ = this->create_publisher<test_interfaces::msg::TestString>(pub_topic, 1);
     }
 }
 
-void Callback::setPeriod(struct timeval period) 
+void Callback::setPeriod(struct timeval period)
 {
     this->timerPeriod = period;
 }
 
-void Callback::stop_timer() 
+void Callback::stop_timer()
 {
-    if (timer_) {
+    if (timer_)
+    {
         timer_->cancel();
-        timer_ = NULL;
+        // timer_ = NULL;
     }
 }
 
-void Callback::start_timer() 
+void Callback::start_timer()
 {
     // Branched chains triggered by subscription can have non-zero period values for analysis purposes. Do not start timer for them.
-    if (subscription_) return; 
-    if (timerPeriod.tv_sec > 0 || timerPeriod.tv_usec > 0) {
-        if (timer_) timer_->cancel();
+    if (subscription_)
+        return;
+    RCLCPP_INFO(this->get_logger(), "Starting timer for callback %s", this->name.c_str());
+    if (timerPeriod.tv_sec > 0 || timerPeriod.tv_usec > 0)
+    {
+        if (timer_)
+            timer_->cancel();
         auto chrono_period = std::chrono::seconds(timerPeriod.tv_sec) + std::chrono::microseconds(timerPeriod.tv_usec);
-        timer_ = this->create_wall_timer(chrono_period, std::bind(&Callback::execute_timer, this));
+        if (!timer_)
+        {
+
+            timer_ = this->create_wall_timer(chrono_period, std::bind(&Callback::execute_timer, this));
+        }
+        else
+        {
+            timer_->reset();
+        }
+    }
+    else
+    {
+        RCLCPP_WARN(this->get_logger(), "Timer period is zero for callback %s", this->name.c_str());
     }
 }
 
@@ -132,16 +153,15 @@ struct timeval Callback::getExecutionTime(const State &state)
     // });
     // int percentileIndex = static_cast<int>(0.95 * executionTimes.size());
     // this->executionTime = executionTimes[percentileIndex];
-    std::sort(non_state_aware_ex_time_history.begin(), non_state_aware_ex_time_history.end(), [](const struct timeval &a, const struct timeval &b) {
-        return (a.tv_sec * 1000000 + a.tv_usec) < (b.tv_sec * 1000000 + b.tv_usec);
-    });
-    //std::cout << "Execution time history size: " << non_state_aware_ex_time_history.size() << std::endl;
+    std::sort(non_state_aware_ex_time_history.begin(), non_state_aware_ex_time_history.end(), [](const struct timeval &a, const struct timeval &b)
+              { return (a.tv_sec * 1000000 + a.tv_usec) < (b.tv_sec * 1000000 + b.tv_usec); });
+    // std::cout << "Execution time history size: " << non_state_aware_ex_time_history.size() << std::endl;
     int percentileIndex = static_cast<int>(0.95 * non_state_aware_ex_time_history.size());
     if (non_state_aware_ex_time_history.size() > 0)
         this->executionTime = non_state_aware_ex_time_history[percentileIndex];
     else
-        this->executionTime = {0,0};
-    //std::cout << "Execution time: " << this->executionTime.tv_sec << "s " << this->executionTime.tv_usec << "us" << std::endl;
+        this->executionTime = {0, 0};
+    // std::cout << "Execution time: " << this->executionTime.tv_sec << "s " << this->executionTime.tv_usec << "us" << std::endl;
     return this->executionTime;
 }
 
@@ -158,12 +178,15 @@ int Callback::getChainID()
 void Callback::setPriority(int priority)
 {
     this->priority = priority;
-    if (!exec) {
+    if (!exec)
+    {
         std::cout << "Warning: callback priority can be set only after added to the executor" << std::endl;
         return;
     }
-    if (timer_) exec->set_callback_priority(timer_, priority); // write needs this function
-    if (subscription_) exec->set_callback_priority(subscription_, priority);
+    if (timer_)
+        exec->set_callback_priority(timer_, priority); // write needs this function
+    if (subscription_)
+        exec->set_callback_priority(subscription_, priority);
 }
 
 int Callback::getPriority()
@@ -194,7 +217,8 @@ int Callback::getNumCruncherLimit()
     return num_cruncher_limit;
 }
 
-void Callback::addExecutionTimeToHistory(const State &state, const timeval &executionTime) {
+void Callback::addExecutionTimeToHistory(const State &state, const timeval &executionTime)
+{
     std::lock_guard mutex{execution_history_mutex_};
     (void)state;
     // if (executionTimeHistory.find(state) == executionTimeHistory.end()) {
@@ -202,22 +226,25 @@ void Callback::addExecutionTimeToHistory(const State &state, const timeval &exec
     // }
     // executionTimeHistory[state].push_back(executionTime);
     non_state_aware_ex_time_history.push_back(executionTime);
-    if(non_state_aware_ex_time_history.size() > 100){
+    if (non_state_aware_ex_time_history.size() > 100)
+    {
         non_state_aware_ex_time_history.pop_front();
     }
-    /*std::cout << "Added execution time to history for callback: " 
+    /*std::cout << "Added execution time to history for callback: "
         << "(cb_prio " << priority << ", thread " << thread_id << ", rt " << is_rt_thread << ", seq " << getSequenceNumber() << ") "
         << name << ": " << executionTime.tv_sec << "s " << executionTime.tv_usec << "us" << std::endl;
     */
 }
 
-std::deque<struct timeval> Callback::getExecutionTimeHistory(const State &state) {
+std::deque<struct timeval> Callback::getExecutionTimeHistory(const State &state)
+{
     std::lock_guard mutex{execution_history_mutex_};
     auto it = executionTimeHistory.find(state);
-    if (it != executionTimeHistory.end()) {
+    if (it != executionTimeHistory.end())
+    {
         return it->second;
     }
-    return {};  // Return an empty deque if the state is not found
+    return {}; // Return an empty deque if the state is not found
 }
 void Callback::setType(CallbackType type)
 {
@@ -259,28 +286,46 @@ void Callback::execute_timer()
 {
     struct timespec start, end;
     struct timeval start_tv, end_tv;
+    int chain_instance_id;
+
     // change timer to clock get time for thread
     // gettimeofday(&start_tv, NULL);
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
-    /////////////////////////////////////////////////////////// 
+    {
+        std::lock_guard<std::mutex> lock(timer_mutex_);
+        // while(!timer_);
+        if (!timer_)
+        {
+            RCLCPP_ERROR(this->get_logger(), "Timer not set for callback %s", name.c_str());
+            return;
+        }
+        if (timer_->is_canceled())
+        {
+            RCLCPP_ERROR(this->get_logger(), "Timer is canceled for callback %s", name.c_str());
+            return;
+        }
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+        ///////////////////////////////////////////////////////////
 
-    // Increment and assign the sequence number atomically for the global sequence
-    increment_sequence_number();                 // Increment the sequence number
-    int chain_instance_id = getSequenceNumber(); // Capture the chain instance ID
-    uint64_t time_until_next_period_usec = std::chrono::duration_cast<std::chrono::microseconds>(timer_->time_until_trigger()).count();
-    uint64_t period_usec = timerPeriod.tv_sec * 1e6 + timerPeriod.tv_usec;
-    add_branch_timestamp(chain_instance_id, period_usec - time_until_next_period_usec); // Add the initial timestamp for the chain instance
+        // Increment and assign the sequence number atomically for the global sequence
+        increment_sequence_number();             // Increment the sequence number
+        chain_instance_id = getSequenceNumber(); // Capture the chain instance ID
+        uint64_t time_until_next_period_usec = std::chrono::duration_cast<std::chrono::microseconds>(timer_->time_until_trigger()).count();
+        uint64_t period_usec = timerPeriod.tv_sec * 1e6 + timerPeriod.tv_usec;
+        add_branch_timestamp(chain_instance_id, period_usec - time_until_next_period_usec); // Add the initial timestamp for the chain instance
 
-    //std::cout << "Executing callback " << name << "(thread " << thread_id << ")" << std::endl;
-    //std::cout << "Executing timer callback " << name << "(thread " << thread_id << ") Instance: " << chain_instance_id << 
-    //    " Elapsed from release(ms): " << (period_usec - time_until_next_period_usec) / 1000. << std::endl;
-
+        //std::cout << "Executing callback " << name << "(thread " << thread_id << ")" << std::endl;
+        std::cout << "Executing timer callback " << name << "(thread " << thread_id << ") Instance: " << chain_instance_id << " Elapsed from release(ms): " << (period_usec - time_until_next_period_usec) / 1000. << std::endl;
+    }
     volatile uint64_t result = number_cruncher(num_cruncher_limit);
     (void)result;
 
     auto message = test_interfaces::msg::TestString();
     message.data = std::to_string(chain_instance_id);
-    if (publisher_) publisher_->publish(message);
+    if (publisher_)
+        publisher_->publish(message);
+    // else{
+    //     RCLCPP_ERROR(this->get_logger(), "Publisher not set for callback %s", name.c_str());
+    // }
 
     ///////////////////////////////////////////////////////////
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
@@ -291,11 +336,15 @@ void Callback::execute_timer()
     timersub(&end_tv, &start_tv, &execution_time);
     // std::cout << "Callback: " << callback->getName() << " executed in " << execution_time.tv_sec << "s " << execution_time.tv_usec << "us by thread: " << std::this_thread::get_id() << std::endl;
     addExecutionTimeToHistory(exec->get_state(), execution_time);
-    if (!publisher_){ // last callback: record response time
+    if (!publisher_)
+    { // last callback: record response time
         record_response_time(chain_instance_id);
     }
 }
-
+std::mutex &Callback::get_mutex()
+{
+    return timer_mutex_;
+}
 void Callback::execute_sub(const test_interfaces::msg::TestString::SharedPtr msg)
 {
     struct timespec start, end;
@@ -307,7 +356,7 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::SharedPtr msg
 
     int chain_instance_id = std::stoi(msg->data); // Capture the chain instance ID
     setSequenceNumber(chain_instance_id);
-    //std::cout << "Executing sub callback " << name << "(thread " << thread_id << ") Instance: " << chain_instance_id << std::endl;
+    // std::cout << "Executing sub callback " << name << "(thread " << thread_id << ") Instance: " << chain_instance_id << std::endl;
     add_branch_timestamp(chain_instance_id); // Add the timestamp for the specific instance
 
     volatile uint64_t result = number_cruncher(num_cruncher_limit);
@@ -315,7 +364,8 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::SharedPtr msg
 
     auto message = test_interfaces::msg::TestString();
     message.data = std::to_string(chain_instance_id);
-    if (publisher_) publisher_->publish(message);
+    if (publisher_)
+        publisher_->publish(message);
 
     ///////////////////////////////////////////////////////////
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
@@ -326,7 +376,8 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::SharedPtr msg
     timersub(&end_tv, &start_tv, &execution_time);
     // std::cout << "Callback: " << callback->getName() << " executed in " << execution_time.tv_sec << "s " << execution_time.tv_usec << "us by thread: " << std::this_thread::get_id() << std::endl;
     addExecutionTimeToHistory(exec->get_state(), execution_time);
-    if (!publisher_){ // last callback: record response time
+    if (!publisher_)
+    { // last callback: record response time
         record_response_time(chain_instance_id);
     }
 }
@@ -342,7 +393,7 @@ void Callback::record_response_time(int chain_instance_id)
     // The last callback of a chain records branch timestamp twice (before callback execution and now)
     // Other callbacks record branch timestamp only once before callback execution.
     // To handle a chain instance with a single callback, we need to get the first branch timestamp instead of the last one.
-    //struct timeval chain_base_time = chain->getFirstCallback()->get_last_branch_timestamp(chain_instance_id);
+    // struct timeval chain_base_time = chain->getFirstCallback()->get_last_branch_timestamp(chain_instance_id);
     struct timeval chain_base_time = chain->getFirstCallback()->get_first_branch_timestamp(chain_instance_id);
     struct timeval chain_ex_time;
     timersub(&chain_stop_time, &chain_base_time, &chain_ex_time);
@@ -487,18 +538,23 @@ std::shared_ptr<Chain> Callback::getChain()
 
 void Callback::set_callback_affinity(uint64_t affinity_mask)
 {
-    if (!exec) {
+    if (!exec)
+    {
         std::cout << "Warning: callback affinity can be set only after added to the executor" << std::endl;
         return;
     }
-    if (timer_) exec->set_callback_affinity(timer_, affinity_mask); // write needs this function
-    if (subscription_) exec->set_callback_affinity(subscription_, affinity_mask);
+    if (timer_)
+        exec->set_callback_affinity(timer_, affinity_mask); // write needs this function
+    if (subscription_)
+        exec->set_callback_affinity(subscription_, affinity_mask);
 }
 
 uint64_t Callback::get_callback_affinity()
 {
-    if (timer_) return timer_->callback_affinity; // read is ok
-    if (subscription_) return subscription_->callback_affinity;
+    if (timer_)
+        return timer_->callback_affinity; // read is ok
+    if (subscription_)
+        return subscription_->callback_affinity;
     return 0;
 }
 

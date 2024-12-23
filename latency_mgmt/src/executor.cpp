@@ -10,7 +10,7 @@
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
 
-#define THREAD_PERIOD 1000000 // 1ms
+#define THREAD_PERIOD 10000000 // 10ms
 std::vector<executor *> executor::instances;
 
 #define LOGGER(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)
@@ -357,6 +357,7 @@ void executor::pause()
     {
         for (auto &callback : chain->getCallbacks())
         {
+            std::lock_guard<std::mutex> lock(callback->get_mutex());
             callback->stop_timer();
         }
     }
@@ -435,7 +436,8 @@ void executor::print_threads()
 void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecutor::spin()
 {
     number_of_threads_ = num_threads;
-    spinning.exchange(true);
+    //spinning.exchange(true);
+    spinning.store(true);
     update_active_threads(0); // Force threads to wait until start() is called
 
     if (num_threads > (int)std::thread::hardware_concurrency())
@@ -445,7 +447,8 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
     }
     int num_rt_threads = num_threads;
 #ifdef LATENCY_MGMT
-    int num_be_threads = num_threads;
+    //int num_be_threads = num_threads;
+    int num_be_threads = 0;
 #else
     int num_be_threads = 0;
 #endif
@@ -473,42 +476,43 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             std::cout << "Creating RT Thread No. " << num_rt_threads << std::endl;
             thread->set_policy(SCHED_DEADLINE);
             // thread->set_priority(0);
-            thread->set_budget(THREAD_PERIOD - 1024);
+            thread->set_budget(THREAD_PERIOD);
+            //thread->set_budget(THREAD_PERIOD - 10240);
             cpu_set_t cpuSet;
             CPU_ZERO(&cpuSet);
-            CPU_SET(num_rt_threads, &cpuSet);
             num_rt_threads--;
-
+            CPU_SET(num_rt_threads, &cpuSet);
             thread->set_affinity(cpuSet, true);
             struct sched_attr attr;
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
-            attr.sched_runtime = THREAD_PERIOD - 1024;
+            attr.sched_runtime = THREAD_PERIOD;  
+            //attr.sched_runtime = THREAD_PERIOD - 10240;
             attr.sched_period = THREAD_PERIOD;   // 200ms period
             attr.sched_deadline = THREAD_PERIOD; // 200ms deadline
-            attr.sched_flags = 0;
+            attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
             attr.sched_nice = 0;
             attr.sched_priority = 0;
             attr.sched_util_min = 0;
             attr.sched_util_max = 1024;
-            thread->set_sched_deadline(attr, 0);
             thread->set_rt(true);
+            thread->set_sched_deadline(attr, 0);
         }
 #ifdef LATENCY_MGMT
         else if (num_be_threads > 0)
         {
             thread->set_policy(SCHED_DEADLINE);
             // thread->set_priority(0);
-            thread->set_budget(1024);
+            thread->set_budget(10240);
             cpu_set_t cpuSet;
             CPU_ZERO(&cpuSet);
-            CPU_SET(num_be_threads, &cpuSet);
             num_be_threads--;
+            CPU_SET(num_be_threads, &cpuSet);
             thread->set_affinity(cpuSet, false);
             struct sched_attr attr;
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
-            attr.sched_runtime = 1024;
+            attr.sched_runtime = 10240;
             attr.sched_period = THREAD_PERIOD;   // 10ms period
             attr.sched_deadline = THREAD_PERIOD; // 10ms deadline
             attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
@@ -516,8 +520,8 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             attr.sched_priority = 0;
             attr.sched_util_min = 0;
             attr.sched_util_max = 1024;
-            thread->set_sched_deadline(attr, 0);
             thread->set_rt(false);
+            thread->set_sched_deadline(attr, 0);
         }
 #endif // LATENCY_MGMT
        // std::cout << "Thread ID: " << thread->get_threadID() << std::endl;

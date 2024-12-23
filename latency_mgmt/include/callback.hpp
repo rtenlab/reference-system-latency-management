@@ -123,6 +123,7 @@ public:
     void stop_timer();
     void start_timer();
     void record_response_time(int chain_instance_id);
+    std::mutex& get_mutex();
 
     rclcpp::TimerBase::SharedPtr timer_ = NULL;
     rclcpp::Publisher<test_interfaces::msg::TestString>::SharedPtr publisher_ = NULL;
@@ -151,6 +152,7 @@ private:
     std::shared_ptr<Chain> chain;
     std::deque<struct timeval> non_state_aware_ex_time_history;
     ordered_mutex execution_history_mutex_;
+    std::mutex timer_mutex_;
 };
 
 

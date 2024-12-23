@@ -60,6 +60,9 @@ public:
     std::shared_ptr<std::thread> get_thread();
     struct rusage get_usage();
     std::unordered_map<boost::uuids::uuid, std::shared_ptr<Callback>, boost::hash<boost::uuids::uuid>>& get_callbacks();
+    void create_cgroup(const std::string &cgroup_name, const std::string &cpus);
+    void add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid);
+
     //void spin();
     void set_budget(int budget);
     void set_rt(bool rt);
