@@ -805,7 +805,7 @@ void executor::apply_callback_to_thread_assignment()
             uint64_t mask = it->second->get_callback_affinity();
             mask |= 1 << thread->logical_thread_id;
             it->second->set_callback_affinity(mask);
-            LOGGER("[cb to thread] thread %d: chain %d callback %d (mask %lx)", thread->logical_thread_id, it->second->getChainID(), it->second->getPlaceInChain(), mask);
+            LOGGER("[cb to thread] thread %d: chain %d callback %d prio %d (mask %lx)", thread->logical_thread_id, it->second->getChainID(), it->second->getPlaceInChain(), it->second->getPriority(), mask);
         }
         if (callbacks.size() > 0)
             active_thread_mask |= 1 << thread->logical_thread_id;
