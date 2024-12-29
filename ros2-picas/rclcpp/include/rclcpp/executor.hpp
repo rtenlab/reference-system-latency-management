@@ -442,28 +442,42 @@ public:
   void
   set_callback_priority(rclcpp::TimerBase::SharedPtr ptr, int priority)
   {
-    if (ptr) ptr->callback_priority = priority;
+    if(!ptr){
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "set_callback_priority: ptr is NULL");
+      return;
+    }
+    else if (ptr) ptr->callback_priority = priority;
   }
 
   RCLCPP_PUBLIC
   void
   set_callback_affinity(rclcpp::TimerBase::SharedPtr ptr, uint64_t affinity_mask)
   {
-    if (ptr) ptr->callback_affinity = affinity_mask;
+    if(!ptr){
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "set_callback_affinity: ptr is NULL");
+    }
+    else if (ptr) ptr->callback_affinity = affinity_mask;
   }
 
   RCLCPP_PUBLIC
   void
   set_callback_data(rclcpp::TimerBase::SharedPtr ptr, void* data)
   {
-    if (ptr) ptr->callback_data = data;
+    if(!ptr){
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "set_callback_data: ptr is NULL");
+      return;
+    }
+    else if (ptr) ptr->callback_data = data;
   }
 
   RCLCPP_PUBLIC
   void 
   set_callback_priority(rclcpp::SubscriptionBase::SharedPtr ptr, int priority)
   {
-    if (!ptr) return;
+    if (!ptr){
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "set_callback_priority: ptr is NULL");
+      return;
+    } 
     ptr->callback_priority = priority;
  
     // There might be other waitables associated with the subscription
@@ -482,7 +496,10 @@ public:
   void 
   set_callback_affinity(rclcpp::SubscriptionBase::SharedPtr ptr, uint64_t affinity_mask)
   {
-    if (!ptr) return;
+    if (!ptr){
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "set_callback_affinity: ptr is NULL");
+      return;
+    } 
     ptr->callback_affinity = affinity_mask;
  
     // There might be other waitables associated with the subscription
@@ -500,7 +517,10 @@ public:
   void 
   set_callback_data(rclcpp::SubscriptionBase::SharedPtr ptr, void* data)
   {
-    if (!ptr) return;
+    if (!ptr){
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "set_callback_data: ptr is NULL");
+      return;
+    } 
     ptr->callback_data = data;
  
     // There might be other waitables associated with the subscription
