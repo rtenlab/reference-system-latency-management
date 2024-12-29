@@ -487,7 +487,7 @@ public:
 
 #ifdef PICAS
     int highest_priority = -1;
-    //PICAS_INFO("[get_next_timer] timer_handles_.size: %lu", timer_handles_.size());
+    PICAS_INFO("[get_next_timer] thread %ld timer_handles_.size: %lu", thread_id, timer_handles_.size());
 #endif
 
     while (it != timer_handles_.end()) {
@@ -507,16 +507,11 @@ public:
           ++it;
           continue;
         }
-        if (!timer->call()) {
-          // timer was cancelled, skip it.
-          ++it;
-          continue;
-        }
-
 #ifdef PICAS
         // PiCAS: choose the highest-priority callback 
         if (callback_priority_enabled && is_rt_thread) {
 #ifdef PICAS_THREAD_AFFINITY
+          PICAS_INFO("[get_next_timer] thread %ld timer affinity %ld prio %d", thread_id, timer->callback_affinity, timer->callback_priority);
           if (timer->callback_affinity & (1 << thread_id)) 
 #endif
           {
@@ -525,6 +520,7 @@ public:
               any_exec.timer = timer;
               any_exec.callback_group = group;
               any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
+              PICAS_INFO("[get_next_timer] found (node name: %s)", any_exec.node_base->get_name());
             }
           }
         } else {
@@ -537,11 +533,17 @@ public:
             any_exec.callback_group = group;
             any_exec.node_base = get_node_by_group(group, weak_groups_to_nodes);
             timer_handles_.erase(it);
-            //PICAS_INFO("[get_next_timer] found (node name: %s)", any_exec.node_base->get_name());
+            PICAS_INFO("[get_next_timer] found (node name: %s)", any_exec.node_base->get_name());
             return;
           }
         }
 #else
+        if (!timer->call()) {
+          // timer was cancelled, skip it.
+          ++it;
+          continue;
+        }
+
         // Otherwise it is safe to set and return the any_exec
         any_exec.timer = timer;
         any_exec.callback_group = group;

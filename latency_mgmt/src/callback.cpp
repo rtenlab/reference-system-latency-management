@@ -104,8 +104,8 @@ void Callback::start_timer()
         auto chrono_period = std::chrono::seconds(timerPeriod.tv_sec) + std::chrono::microseconds(timerPeriod.tv_usec);
         if (!timer_)
         {
-
             timer_ = this->create_wall_timer(chrono_period, std::bind(&Callback::execute_timer, this));
+            exec->set_callback_priority(timer_, priority); // Needed if callback priority was set before the timer object was created
         }
         else
         {

@@ -670,6 +670,13 @@ Executor::execute_subscription(rclcpp::SubscriptionBase::SharedPtr subscription)
 void
 Executor::execute_timer(rclcpp::TimerBase::SharedPtr timer)
 {
+#ifdef PICAS
+  // Note: In order not to miss unhandled timer events across polling points, we call rcl_timer_call() right before actually running the callback.
+  if (!timer->call()) {
+    // timer was cancelled, skip it.
+    return;
+  }
+#endif
   timer->execute_callback();
 }
 
