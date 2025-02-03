@@ -46,14 +46,14 @@ enum class CallbackType
 class Callback : public rclcpp::Node
 {
 public:
-    Callback(CallbackType type, struct timeval period, int chainID, int placeInChain, int priority, std::string name, std::string sub_topic, std::string pub_topic, int num_cruncher_limit, bool is_nonlinear = false);
-    Callback(CallbackType type, struct timeval period, int chainID, int placeInChain, int priority, int branch_id, std::string name, std::string sub_topic, std::string pub_topic, int num_cruncher_limit, bool is_nonlinear = false);
+    Callback(CallbackType type, struct timeval period, int chainID, int placeInChain, int priority, std::string name, std::string sub_topic, std::string pub_topic, int num_cruncher_limit, std::shared_ptr<rclcpp::CallbackGroup>& chain_cb_group, bool is_nonlinear = false);
+    Callback(CallbackType type, struct timeval period, int chainID, int placeInChain, int priority, int branch_id, std::string name, std::string sub_topic, std::string pub_topic, int num_cruncher_limit, std::shared_ptr<rclcpp::CallbackGroup>& chain_cb_group, bool is_nonlinear = false);
 
     void setPeriod(struct timeval period);
     struct timeval getPeriod();
 
-    void setExecutionTime(struct timeval executionTime, const State &state);
-    struct timeval getExecutionTime(const State &state);
+    void setExecutionTime(struct timeval executionTime);
+    struct timeval getExecutionTime();
 
     void setChainID(int chainID);
     int getChainID();
@@ -65,8 +65,7 @@ public:
 
     void printCallback();
 
-    std::deque<struct timeval> getExecutionTimeHistory(const State &state);
-    void addExecutionTimeToHistory(const State &state, const timeval &executionTime);
+    void addExecutionTimeToHistory(const timeval &executionTime);
 
     void setType(CallbackType type);
     CallbackType getType();
@@ -78,7 +77,8 @@ public:
     int getSequenceNumber();
 
     void execute_timer();
-    void execute_sub(const test_interfaces::msg::TestString::SharedPtr msg);
+    //void execute_sub(const test_interfaces::msg::TestString::SharedPtr msg);
+    void execute_sub(const test_interfaces::msg::TestString::UniquePtr msg);
 
     void setNumCruncherLimit(int limit);
 
@@ -128,11 +128,14 @@ public:
     rclcpp::TimerBase::SharedPtr timer_ = NULL;
     rclcpp::Publisher<test_interfaces::msg::TestString>::SharedPtr publisher_ = NULL;
     rclcpp::Subscription<test_interfaces::msg::TestString>::SharedPtr subscription_ = NULL;    
+    rclcpp::CallbackGroup::SharedPtr chain_cb_group_;
     executor* exec;
 
 private:
     struct timeval timerPeriod;
-    struct timeval executionTime;
+    struct timeval executionTime = {0,0};
+    struct timeval recording_delay = {0,0};
+    struct timeval message_delay = {0, 0};
     int chainID;
     boost::uuids::uuid uuid;
     int placeInChain;
@@ -141,7 +144,7 @@ private:
     CallbackType type;
     std::string name;
     int sequence_number = 0;
-    std::map<State, std::deque<struct timeval>> executionTimeHistory;
+    //std::map<State, std::deque<struct timeval>> executionTimeHistory;
     int num_cruncher_limit = 65536;
     std::shared_ptr<Callback> shared_ptr;
     Callback *raw_pointer;

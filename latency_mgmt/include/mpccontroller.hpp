@@ -32,21 +32,25 @@ public:
     void assign_executor(executor *exec);
     void run();
     void chain_test();
-    double MLP(double, std::vector<std::shared_ptr<Chain>>, int, double, State);
+    double MLP(double, std::vector<std::shared_ptr<Chain>>, int, double);
     void create_threadclass(void);
-    double compute_chain_utilization(std::shared_ptr<Chain> chain, State current_state);
-    bool reduce_rt_budget(std::shared_ptr<threadclass> tc, const State& current_state, unsigned int* analysis_count);
+    double compute_chain_utilization(std::shared_ptr<Chain> chain);
+    bool reduce_rt_budget(std::shared_ptr<threadclass> tc, unsigned int* analysis_count, int min_budget);
     void reallocate_chains(unsigned int* analysis_count);
-    void update_tc_utilization(std::shared_ptr<threadclass> tc, State current_state);
+    void update_tc_utilization(std::shared_ptr<threadclass> tc);
     void reallocate_be_chains();
-    void verify_starvation_freedom(std::shared_ptr<threadclass> tc, State current_state);
-    std::vector<struct timeval> pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget, State current_state);
+    void verify_starvation_freedom(std::shared_ptr<threadclass> be_tc);
+    std::vector<struct timeval> pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget);
+    
 private:
     executor *exec;
     State current_state;
     std::map<State, std::vector<std::deque<struct timeval>>> state_associated_execution_times;
     std::chrono::milliseconds period = std::chrono::milliseconds(8000);
     std::vector<std::shared_ptr<threadclass>> threadclasses;
+    // condition variable for alerting the mpc controller of a timing violation
+    std::shared_ptr<std::condition_variable> cv_ptr;
+    std::shared_ptr<std::mutex> mtx_ptr;
 };
 
 #endif // MPC_CONTROLLER_H

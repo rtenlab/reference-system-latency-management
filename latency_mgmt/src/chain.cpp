@@ -232,7 +232,7 @@ uint64_t Chain::getChainResponseTime(int branch_id)
     std::sort(sorted_chainResponseTimeHistory.begin(), sorted_chainResponseTimeHistory.end(), [](struct timeval a, struct timeval b)
               { return a.tv_sec * 1e6 + a.tv_usec < b.tv_sec * 1e6 + b.tv_usec; });
     // get the 95th percentile
-    int percentileIndex = static_cast<int>(0.95 * sorted_chainResponseTimeHistory.size());
+    int percentileIndex = static_cast<int>(0.99 * sorted_chainResponseTimeHistory.size());
     if (sorted_chainResponseTimeHistory.size() > 0)
     {
         response_time = sorted_chainResponseTimeHistory[percentileIndex].tv_sec * 1e6 + sorted_chainResponseTimeHistory[percentileIndex].tv_usec;
@@ -241,13 +241,13 @@ uint64_t Chain::getChainResponseTime(int branch_id)
 }
 
 
-void Chain::add_response_time_to_history(State current_state, size_t branch_id, struct timeval execution_time)
+void Chain::add_response_time_to_history(size_t branch_id, struct timeval execution_time)
 {
     if(branch_id >= chainResponseTimeHistory.size())
     {
         chainResponseTimeHistory.resize(branch_id + 1);
     }
-    if (chainResponseTimeHistory[branch_id].size() >= 10)
+    if (chainResponseTimeHistory[branch_id].size() >= 20)
     {
         chainResponseTimeHistory[branch_id].pop_front();
     }
@@ -277,7 +277,7 @@ void Chain::add_response_time_to_history(State current_state, size_t branch_id, 
 
 }
 
-std::deque<struct timeval> Chain::get_branch_response_time_history(State current_state, size_t branch_id)
+std::deque<struct timeval> Chain::get_branch_response_time_history(size_t branch_id)
 {
     // if (branch_chain_history.find(current_state) == branch_chain_history.end())
     // {

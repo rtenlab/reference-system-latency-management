@@ -84,8 +84,12 @@ public:
     State get_state();
     std::shared_ptr<executor_thread> get_thread(int threadID);
     void apply_callback_to_thread_assignment();
+    void assign_cv(std::shared_ptr<std::condition_variable> cv_ptr, std::shared_ptr<std::mutex> mtx_ptr);
 
 private:
+    std::shared_ptr<std::condition_variable> cv_ptr;
+    std::shared_ptr<std::mutex> mtx_ptr;
+
     bool priority_scheduling = false;
     static std::vector<executor *> instances; // Track all instances
     std::vector<std::shared_ptr<executor_thread>> threads;

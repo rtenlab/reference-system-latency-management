@@ -65,6 +65,20 @@ void threadclass::set_utilization(double utilization)
 
 double threadclass::get_utilization()
 {
+    // if util is infinite, compute utilization
+    if (utilization == std::numeric_limits<double>::infinity())
+    {
+        double total_util = 0, chain_util = 0;
+        for (auto &chain : chains)
+        {
+            for(auto &callback : chain->getCallbacks()){
+                chain_util += callback->getExecutionTime().tv_sec * 1e6 + callback->getExecutionTime().tv_usec;
+            }
+            total_util += chain_util / (chain->getPeriod().tv_sec * 1e6 + chain->getPeriod().tv_usec);
+        }
+        utilization = total_util;
+        //return total_util;
+    }
     return utilization;
 }
 

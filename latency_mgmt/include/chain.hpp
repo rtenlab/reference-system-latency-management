@@ -61,8 +61,8 @@ public:
     int getNumCallbacks();
     int get_num_branches();
     std::deque<struct timeval> getChainExecutionTimeHistory() const;
-    void add_response_time_to_history(State current_state, size_t branch_id, struct timeval execution_time);
-    std::deque<struct timeval> get_branch_response_time_history(State current_state, size_t branch_id);
+    void add_response_time_to_history(size_t branch_id, struct timeval execution_time);
+    std::deque<struct timeval> get_branch_response_time_history( size_t branch_id);
 
     uint64_t getChainResponseTime(int branch_id);
 

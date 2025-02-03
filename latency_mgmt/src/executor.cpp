@@ -19,6 +19,13 @@ std::vector<executor *> executor::instances;
 extern thread_local size_t thread_id;
 extern thread_local bool is_rt_thread;
 
+void executor::assign_cv(std::shared_ptr<std::condition_variable> cv, std::shared_ptr<std::mutex> mtx)
+{
+    this->cv_ptr = cv;
+    this->mtx_ptr = mtx;
+}
+
+
 bool CompareCallback::operator()(const std::pair<std::shared_ptr<Callback>, int> &a, const std::pair<std::shared_ptr<Callback>, int> &b) const
 {
     // Compare by type: TIMER has higher priority than SUBSCRIPTION
@@ -55,17 +62,21 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
     std::shared_ptr<Callback> previous_callback = nullptr;
     int rt_chain_id = 0, be_chain_id = 0;
 
-    for (auto &chain : chains)
+    for (auto &chain : chains) // for each chain
     {
-        if (chain->get_num_branches() == 0)
+        if (chain->get_num_branches() == 0) 
         { // if linear
             if (chain->getBranchPriority(0) == 0)
             { // if BE
+                int place_in_chain = 0;
                 std::shared_ptr<Chain> be_chain = std::make_shared<Chain>(be_chain_id);
                 for (auto &callback : chain->getCallbacks())
                 {
                     be_chain->addCallback(callback, false);
                     callback->setChain(chain);
+                    callback->setChainID(be_chain_id); 
+                    callback->setPlaceInChain(place_in_chain++); 
+
                 }
                 be_chain->setPeriod(chain->getPeriod());
                 be_chain->setDeadline(chain->getPeriod());
@@ -76,11 +87,15 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
             }
             else
             { // if linear and RT
-                std::shared_ptr<Chain> rt_chain = std::make_shared<Chain>(rt_chain_id);
+                int place_in_chain = 0;
+                std::shared_ptr<Chain> rt_chain = std::make_shared<Chain>(rt_chain_id); 
                 for (auto &callback : chain->getCallbacks())
                 {
                     rt_chain->addCallback(callback, false);
                     callback->setChain(chain);
+                    callback->setChainID(rt_chain_id);   
+                    callback->setPlaceInChain(place_in_chain++);                 
+
                 }
                 rt_chain->setPeriod(chain->getPeriod());
                 rt_chain->setDeadline(chain->getLatencyTargets()->at(0));
@@ -91,25 +106,27 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
             }
         }
         else
-        { // if nonlinear, then create a new chain for each branch and add only the branched callbacks to their own chains, change
-            for (int branch_id = 0; branch_id <= chain->get_num_branches(); branch_id++)
+        { // if nonlinear
+            for (int branch_id = 0; branch_id <= chain->get_num_branches(); branch_id++) // for each branch id
             {
-                if (chain->getBranchPriority(branch_id) == 0)
+                if (chain->getBranchPriority(branch_id) == 0) // if BE chain
                 {
-                    std::shared_ptr<Chain> be_chain = std::make_shared<Chain>(be_chain_id);
+                    std::shared_ptr<Chain> be_chain = std::make_shared<Chain>(be_chain_id); // make new chain for this analysis
                     int place_in_chain = 0;
-                    for (auto &callback : chain->getCallbacks())
+                    for (auto &callback : chain->getCallbacks()) // for each callback in the chain  that we are testing
                     {
-                        if (callback->get_branch_id() == branch_id && place_in_chain == 0)
+                        if (callback->get_branch_id() == branch_id && place_in_chain == 0) // check to see if the candidate callback for this chain matches the branch we are evaluating
                         {
+                            // if the callback branch matches the branch we are evaluating, and it is 
                             // Note: Callback is derived from rclcpp::Node which cannot be copied (copy constructor not allowed).
                             //       So, Keep the original callback instance and add its pointer to the new chain
                             // std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::TIMER, chain->getFirstCallback()->getPeriod(), be_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
-                            callback->setPeriod(chain->getFirstCallback()->getPeriod());
+                            
+                            callback->setPeriod(chain->getFirstCallback()->getPeriod()); 
                             callback->setChainID(be_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
                             callback->setPriority(0);
-                            callback->setExecutionTime(callback->getExecutionTime(this->get_state()), this->get_state());
+                            callback->setExecutionTime(callback->getExecutionTime());
                             callback->set_branch_id(0);
                             callback->set_nonlinear(false);
                             be_chain->addCallback(callback, false);
@@ -127,7 +144,7 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                             callback->setChainID(be_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
                             callback->setPriority(0);
-                            callback->setExecutionTime(callback->getExecutionTime(this->get_state()), this->get_state());
+                            callback->setExecutionTime(callback->getExecutionTime());
                             callback->set_branch_id(0);
                             callback->set_nonlinear(false);
                             be_chain->addCallback(callback, false);
@@ -154,7 +171,7 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                             callback->setPeriod(chain->getFirstCallback()->getPeriod());
                             callback->setChainID(rt_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
-                            callback->setExecutionTime(callback->getExecutionTime(this->get_state()), this->get_state());
+                            callback->setExecutionTime(callback->getExecutionTime());
                             callback->set_branch_id(0);
                             callback->set_nonlinear(false);
                             rt_chain->addCallback(callback, false);
@@ -171,7 +188,7 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                             callback->setPeriod(period);
                             callback->setChainID(rt_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
-                            callback->setExecutionTime(callback->getExecutionTime(this->get_state()), this->get_state());
+                            callback->setExecutionTime(callback->getExecutionTime());
                             callback->set_branch_id(0);
                             callback->set_nonlinear(false);
                             rt_chain->addCallback(callback, false);
@@ -443,12 +460,12 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
     if (num_threads > (int)std::thread::hardware_concurrency())
     {
         std::cerr << "Error: Number of threads exceeds hardware concurrency. Setting to hardware concurrency." << std::endl;
-        num_threads = std::thread::hardware_concurrency() - 1;
+        num_threads = std::thread::hardware_concurrency();
     }
     int num_rt_threads = num_threads;
 #ifdef LATENCY_MGMT
-    //int num_be_threads = num_threads;
-    int num_be_threads = 0;
+    int num_be_threads = num_threads;
+    //int num_be_threads = 0;
 #else
     int num_be_threads = 0;
 #endif
@@ -476,8 +493,8 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             std::cout << "Creating RT Thread No. " << num_rt_threads << std::endl;
             thread->set_policy(SCHED_DEADLINE);
             // thread->set_priority(0);
-            thread->set_budget(THREAD_PERIOD);
-            //thread->set_budget(THREAD_PERIOD - 10240);
+            //thread->set_budget(THREAD_PERIOD);
+            thread->set_budget(THREAD_PERIOD - 10240);
             cpu_set_t cpuSet;
             CPU_ZERO(&cpuSet);
             num_rt_threads--;
@@ -486,8 +503,8 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             struct sched_attr attr;
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
-            attr.sched_runtime = THREAD_PERIOD;  
-            //attr.sched_runtime = THREAD_PERIOD - 10240;
+            //attr.sched_runtime = THREAD_PERIOD;  
+            attr.sched_runtime = THREAD_PERIOD - 10240;
             attr.sched_period = THREAD_PERIOD;   // 200ms period
             attr.sched_deadline = THREAD_PERIOD; // 200ms deadline
             attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
@@ -1223,6 +1240,11 @@ void executor::update_waitset()
     global_queue_mutex.unlock();
 }
 */
+// void executor::add_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group)
+// {
+    
+//     this->add_callback_group(group, true);
+// }
 
 void executor::add_chain(std::shared_ptr<Chain> chain)
 {

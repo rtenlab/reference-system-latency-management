@@ -25,7 +25,7 @@ source "$SCRIPT_DIR/../install/setup.bash"
 #"$SCRIPT_DIR/build/latency_mgmt/latency_mgmt"
 
 # after some 10 minutes, kill the executor process
-sleep 600
+sleep 300
 pkill -f latency_mgmt
 
 #recompile without latency management or thread affinity and run again
@@ -35,7 +35,7 @@ colcon build --symlink-install --cmake-args -DPICAS=TRUE -DLATENCY_MGMT=FALSE -D
 source "$SCRIPT_DIR/../install/setup.bash"
 
 "$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt" > "$SCRIPT_DIR/picas.txt" &
-sleep 600
+sleep 300
 pkill -f latency_mgmt
 
 # recompile without picas and run again
@@ -45,6 +45,6 @@ source "$SCRIPT_DIR/../install/setup.bash"
 
 "$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt" > "$SCRIPT_DIR/default.txt" &
 
-sleep 600
+sleep 300
 
 pkill -f latency_mgmt
