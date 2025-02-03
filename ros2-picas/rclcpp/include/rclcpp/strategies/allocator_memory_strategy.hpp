@@ -25,6 +25,7 @@
 #include "rclcpp/memory_strategy.hpp"
 #include "rclcpp/node.hpp"
 #include "rclcpp/visibility_control.hpp"
+#include <nvtx3/nvToolsExt.h>  // sometimes needed
 
 #include "rcutils/logging_macros.h"
 
@@ -32,6 +33,83 @@
 
 #include <rclcpp/picas.hpp>
 
+template <typename... Args>
+std::string string_format(const std::string &format, Args... args)
+{
+    // First, find the size needed
+    int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
+    if (size_s <= 0)
+    {
+        throw std::runtime_error("Error in string_format while formatting.");
+    }
+
+    // Allocate the exact buffer
+    auto size = static_cast<size_t>(size_s);
+    std::unique_ptr<char[]> buf(new char[size]);
+
+    // Do the actual formatting
+    std::snprintf(buf.get(), size, format.c_str(), args...);
+
+    // Convert to std::string (excluding the null terminator)
+    return std::string(buf.get(), buf.get() + size - 1);
+}        
+class NvtxScopedRange
+{
+public:
+    NvtxScopedRange(const std::string &message)
+    {
+        std::stringstream ss;
+        //ss << std::this_thread::get_id();
+        // use pthread get name
+        pthread_t thread = pthread_self();
+        char thread_name_c[16];
+        pthread_getname_np(thread, thread_name_c, sizeof(thread_name_c));
+        ss << thread_name_c;
+        std::string thread_name = ss.str();
+        int color_idx = 0;
+        if (strcmp(thread_name.substr(0, 2).c_str(), "RT"))
+        {
+            color_idx = std::stoi(thread_name.substr(10, 1).c_str());
+        }
+        else
+        {
+            // num threads per threadclass = 4
+            color_idx = 4 + std::stoi(thread_name.substr(10, 1));
+        }
+        nvtxEventAttributes_t eventAttrib = {};
+        eventAttrib.version = NVTX_VERSION;
+        eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
+        // Which thread am I on? Pick color based on the name
+        uint32_t argbColor = s_colorPalette[color_idx];
+        eventAttrib.colorType = NVTX_COLOR_ARGB;
+        eventAttrib.color = argbColor;
+        // Set the label
+        eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII;
+        eventAttrib.message.ascii = (thread_name + message).c_str();
+        // range_id_ = nvtxRangeStartA(message.c_str());
+        //nvtxRangePushEx(&eventAttrib);
+        range_id_ = nvtxRangeStartEx(&eventAttrib);
+    }
+    ~NvtxScopedRange()
+    {
+        //nvtxRangePop();
+        nvtxRangeEnd(range_id_);
+    }
+
+private:
+        nvtxRangeId_t range_id_;
+        uint32_t s_colorPalette[9] = {
+        0xFFFF0000, // red
+        0xFF00FF00, // green
+        0xFF0000FF, // blue
+        0xFFFFFF00, // yellow
+        0xFFFF00FF, // magenta
+        0xFF00FFFF, // cyan
+        0xFFFF8000, // orange
+        0xFF808000, // olive
+        0xFF808080  // gray
+    };
+};
 #ifdef PICAS
 
 extern thread_local size_t thread_id;
@@ -160,6 +238,13 @@ public:
 
   bool collect_entities(const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes) override
   {
+    // get the name of the thread and put into char array
+    //pthread_t thread = pthread_self();
+    //char thread_name_c[16];
+    //pthread_getname_np(thread, thread_name_c, sizeof(thread_name_c));
+    //std::string thread_name = thread_name_c;
+    
+    NvtxScopedRange range("AllocatorMemoryStrategy::collect_entities");
     bool has_invalid_weak_groups_or_nodes = false;
     for (const auto & pair : weak_groups_to_nodes) {
       auto group = pair.first.lock();
@@ -174,6 +259,7 @@ public:
 
       group->collect_all_ptrs(
         [this](const rclcpp::SubscriptionBase::SharedPtr & subscription) {
+
           subscription_handles_.push_back(subscription->get_subscription_handle());
         },
         [this](const rclcpp::ServiceBase::SharedPtr & service) {

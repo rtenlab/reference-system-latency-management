@@ -29,6 +29,7 @@ using std::placeholders::_1;
 //std::mutex mtx;
 
 #define gettid() syscall(__NR_gettid)
+#define THREAD_PERIOD_US "1000" // 10ms
 void test_case_1();
 void test_case_2();
 void set_rt_runtime_unlimited();
@@ -40,6 +41,21 @@ int main(int argc, char * argv[])
     // if not root, exit
     if (getuid() != 0) {
         RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Please run as root.");
+        return -1;
+    }
+
+    struct sched_param param;
+    param.sched_priority = 95;
+    if (sched_setscheduler(0, SCHED_FIFO, &param) != 0) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to set real-time scheduler: %s", strerror(errno));
+        return -1;
+    }
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(6, &cpuset);
+    CPU_SET(7, &cpuset);
+    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to set CPU affinity: %s", strerror(errno));
         return -1;
     }
 
@@ -85,7 +101,7 @@ void set_rt_runtime_unlimited() {
 void set_rt_period() {
     std::ofstream ofs("/proc/sys/kernel/sched_rt_period_us");
     if (ofs.is_open()) {
-        ofs << "10000";
+        ofs << THREAD_PERIOD_US; //
         ofs.close();
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Set SCHED_DEADLINE system period to 10ms.");
     } else {
@@ -95,14 +111,14 @@ void set_rt_period() {
 
 
 void test_case_1(){
-   int n_cpus = 5;
+   int n_cpus = 4;
     executor ex(n_cpus);
 
     auto chain1_2_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain1_2 = std::make_shared<Chain>(0);
-    auto c0_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 0, 1, 22, "front_lidar_driver", "", "c0_cb1", 1000, chain1_2_cb_group);
-    auto c0_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 2, 24, "points_transformer_front", "c0_cb1", "c0_cb2", 65536, chain1_2_cb_group);
+    auto c0_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 0, 1, 22, 0, "front_lidar_driver", "", "c0_cb1", 1000, chain1_2_cb_group);
+    auto c0_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 2, 24, 0, "points_transformer_front", "c0_cb1", "c0_cb2", 65536, chain1_2_cb_group);
     auto c0_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 3, 27, 0, "point_cloud_fusion", "c0_cb2", "c0_cb3", 65536, chain1_2_cb_group, true);
     //auto c0_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 3, 27, 0, "point_cloud_fusion", "c0_cb2", "c0_cb3", 65536);
     auto c0_cb4 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 0, 4, 27, 0, "ray_ground_filter", "c0_cb3", "c0_cb4", 65536, chain1_2_cb_group);
@@ -190,9 +206,9 @@ void test_case_1(){
 
     auto chain7_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain7 = std::make_shared<Chain>(3);
-    auto c3_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 3, 1, 23, "rear_lidar_driver", "", "c3_cb1", 1000, chain7_cb_group);
-    auto c3_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 3, 2, 25, "points_transformer_rear", "c3_cb1", "c3_cb2", 65536, chain7_cb_group);
-    auto c3_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 3, 3, 26, "pointcloud_fusion_input", "c3_cb2", "", 32768, chain7_cb_group);
+    auto c3_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 3, 1, 23, 0, "rear_lidar_driver", "", "c3_cb1", 1000, chain7_cb_group);
+    auto c3_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 3, 2, 25, 0, "points_transformer_rear", "c3_cb1", "c3_cb2", 65536, chain7_cb_group);
+    auto c3_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 3, 3, 26, 0, "pointcloud_fusion_input", "c3_cb2", "", 32768, chain7_cb_group);
     c3_cb1->setChain(chain7);
     c3_cb2->setChain(chain7);
     c3_cb3->setChain(chain7);
@@ -208,7 +224,7 @@ void test_case_1(){
 
     auto chain8_9_10_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain8_9_10 = std::make_shared<Chain>(4);
-    auto c4_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 4, 1, 9, "lanelet_2_map", "", "c4_cb1", 1000, chain8_9_10_cb_group);
+    auto c4_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 4, 1, 9, 0, "lanelet_2_map", "", "c4_cb1", 1000, chain8_9_10_cb_group);
     auto c4_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 4, 2, 11, 0, "lanelet_2_map_loader", "c4_cb1", "c4_cb2", 65536, chain8_9_10_cb_group, true);
     auto c4_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 4, 3, 12, 0, "parking_planner", "c4_cb2", "c4_cb3", 65536, chain8_9_10_cb_group);
     auto c4_cb4 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 4, 4, 17, 0, "behavior_planner_input_2", "c4_cb3", "", 1000, chain8_9_10_cb_group);
@@ -242,8 +258,8 @@ void test_case_1(){
 
     auto chain11_12_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain11_12 = std::make_shared<Chain>(5);
-    auto c5_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 120000}, 5, 1, 1, "pointcloud_map", "", "c5_cb1", 1000, chain11_12_cb_group);
-    auto c5_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, "pointcloud_map_loader", "c5_cb1", "c5_cb2", 65536, chain11_12_cb_group);
+    auto c5_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 120000}, 5, 1, 1, 0, "pointcloud_map", "", "c5_cb1", 1000, chain11_12_cb_group);
+    auto c5_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, 0, "pointcloud_map_loader", "c5_cb1", "c5_cb2", 65536, chain11_12_cb_group);
     auto c5_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 3, 5, 0, "ndt_localizer", "c5_cb2", "c5_cb3", 65536, chain11_12_cb_group, true);
     auto c5_cb4 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 4, 7, 0, "lanelet_2_global_planner_input", "c5_cb3", "", 32768, chain11_12_cb_group);
     auto c5_cb5 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 4, 18, 1, "behavior_planner_input_5", "c5_cb3", "", 1000, chain11_12_cb_group);
@@ -270,9 +286,9 @@ void test_case_1(){
     //auto  chain13_cb_group = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain13 = std::make_shared<Chain>(6);
-    auto c6_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 25000}, 6, 1, 19, "euclidean_cluster_settings", "", "c6_cb1", 1000, chain13_cb_group);
-    auto c6_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 6, 2, 20, "euclidean_cluster_detector_1", "c6_cb1", "c6_cb2", 65536, chain13_cb_group);
-    auto c6_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 6, 3, 21, "intersection_output", "c6_cb2", "", 16384, chain13_cb_group);
+    auto c6_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 25000}, 6, 1, 19, 0, "euclidean_cluster_settings", "", "c6_cb1", 1000, chain13_cb_group);
+    auto c6_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 6, 2, 20, 0, "euclidean_cluster_detector_1", "c6_cb1", "c6_cb2", 65536, chain13_cb_group);
+    auto c6_cb3 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 6, 3, 21, 0, "intersection_output", "c6_cb2", "", 16384, chain13_cb_group);
     c6_cb1->setChain(chain13);
     c6_cb2->setChain(chain13);
     c6_cb3->setChain(chain13);
@@ -363,7 +379,7 @@ void test_case_1(){
     mpc.assign_executor(&ex);
     std::thread mpc_thread(&MPCController::run, &mpc);
     struct sched_param param2;
-    param2.sched_priority = 98;
+    param2.sched_priority = 90;
     int policy = SCHED_FIFO;
     int ret = pthread_setschedparam(mpc_thread.native_handle(), policy, &param2);
 

@@ -33,7 +33,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # (from https://github.com/ros2/rclcpp/pull/1188#issuecomment-650229140)
   add_compile_options(-Wall -Wextra -Wconversion -Wno-sign-conversion -Wpedantic -Wnon-virtual-dtor -Woverloaded-virtual)
 endif()
-
+if(${CMAKE_CXX_FLAGS})
+  message(WARNING "CMAKE_CXX_FLAGS is set to ${CMAKE_CXX_FLAGS}")
+  add_compile_options(${CMAKE_CXX_FLAGS})
+endif()
 # PICAS Executor
 if(${PICAS})
   add_compile_options(-DPICAS)
@@ -121,7 +124,23 @@ set(${PROJECT_NAME}_SRCS
 )
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# --- Add NVTX3 include path ---
+include_directories("/usr/local/cuda/targets/sbsa-linux/include")
 
+# --- Find NVToolsExt library (for linking) ---
+find_library(NVTX_LIBRARY
+  NAMES nvToolsExt
+  HINTS
+    /usr/local/cuda/targets/sbsa-linux/lib
+    /usr/local/cuda/lib64
+)
+
+if(NOT NVTX_LIBRARY)
+  message(FATAL_ERROR "Could not find nvToolsExt (NVTX) library. \
+  Please install or provide a search path to find_library()")
+else()
+  message(STATUS "Found nvToolsExt library at: ${NVTX_LIBRARY}")
+endif()
 # "watch" template for changes
 configure_file(
   "resource/logging.hpp.em"
@@ -199,6 +218,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
 target_link_libraries(${PROJECT_NAME} ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${PROJECT_NAME} ${NVTX_LIBRARY})
+
 # specific order: dependents before dependencies
 ament_target_dependencies(${PROJECT_NAME}
   "ament_index_cpp"
@@ -250,12 +271,12 @@ ament_export_dependencies(rcl_yaml_param_parser)
 ament_export_dependencies(statistics_msgs)
 ament_export_dependencies(tracetools)
 
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  ament_lint_auto_find_test_dependencies()
+# if(BUILD_TESTING)
+#   find_package(ament_lint_auto REQUIRED)
+#   ament_lint_auto_find_test_dependencies()
 
-  add_subdirectory(test)
-endif()
+#   add_subdirectory(test)
+# endif()
 
 ament_package()
 

@@ -18,7 +18,6 @@
 #include <list>
 #include <map>
 #include <memory>
-
 #include "rcl/allocator.h"
 #include "rcl/wait.h"
 

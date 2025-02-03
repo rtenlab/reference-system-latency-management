@@ -67,7 +67,11 @@ public:
 
     uint64_t getChainResponseTime(int branch_id);
 
+    struct timeval get_Rj();
+    void set_Rj(struct timeval Rj);
+
 private:
+    struct timeval Rj = {0,0};
     int chainID;
     std::vector<std::shared_ptr<Callback>> callbacks;
     boost::uuids::uuid uuid;

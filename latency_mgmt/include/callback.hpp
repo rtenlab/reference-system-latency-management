@@ -25,6 +25,9 @@ class State;
 #include "rclcpp/rclcpp.hpp"
 #include "test_interfaces/msg/test_string.hpp"
 
+//NVTX DEBUG
+#include <nvtx3/nvToolsExt.h>  // sometimes needed
+
 class Callback;
 class Chain;
 struct callback_entry
@@ -36,6 +39,63 @@ struct callback_entry
     {
         return global_sequence_number < other.global_sequence_number;
     }
+};
+class NvtxScopedRange
+{
+public:
+    NvtxScopedRange(const std::string &message)
+    {
+        std::stringstream ss;
+        //ss << std::this_thread::get_id();
+        // use pthread get name
+        pthread_t thread = pthread_self();
+        char thread_name_c[16];
+        pthread_getname_np(thread, thread_name_c, sizeof(thread_name_c));
+        ss << thread_name_c;
+        std::string thread_name = ss.str();
+        int color_idx = 0;
+        if (strcmp(thread_name.substr(0, 2).c_str(), "RT"))
+        {
+            color_idx = std::stoi(thread_name.substr(10, 1).c_str());
+        }
+        else
+        {
+            // num threads per threadclass = 4
+            color_idx = 4 + std::stoi(thread_name.substr(10, 1));
+        }
+        nvtxEventAttributes_t eventAttrib = {};
+        eventAttrib.version = NVTX_VERSION;
+        eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
+        // Which thread am I on? Pick color based on the name
+        uint32_t argbColor = s_colorPalette[color_idx];
+        eventAttrib.colorType = NVTX_COLOR_ARGB;
+        eventAttrib.color = argbColor;
+        // Set the label
+        eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII;
+        eventAttrib.message.ascii = message.c_str();
+        // range_id_ = nvtxRangeStartA(message.c_str());
+        //nvtxRangePushEx(&eventAttrib);
+        range_id_ = nvtxRangeStartEx(&eventAttrib);
+    }
+    ~NvtxScopedRange()
+    {
+        //nvtxRangePop();
+        nvtxRangeEnd(range_id_);
+    }
+
+private:
+        nvtxRangeId_t range_id_;
+        uint32_t s_colorPalette[9] = {
+        0xFFFF0000, // red
+        0xFF00FF00, // green
+        0xFF0000FF, // blue
+        0xFFFFFF00, // yellow
+        0xFFFF00FF, // magenta
+        0xFF00FFFF, // cyan
+        0xFFFF8000, // orange
+        0xFF808000, // olive
+        0xFF808080  // gray
+    };
 };
 
 enum class CallbackType

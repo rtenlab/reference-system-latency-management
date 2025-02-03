@@ -1,6 +1,8 @@
 #ifndef EXECUTOR_CPP
 #define EXECUTOR_CPP
 #include <executor.hpp>
+#include <nvtx3/nvToolsExt.h> // sometimes needed
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE /* See feature_test_macros(7) */
 #endif
@@ -9,7 +11,9 @@
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
 
-#define THREAD_PERIOD 10000000 // 10ms
+//#define THREAD_PERIOD 10000000 // 10ms
+#define THREAD_PERIOD 1000000 // 1ms
+#define US_OFFSET 1024
 std::vector<executor *> executor::instances;
 
 #define LOGGER(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)
@@ -266,7 +270,6 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                                 callback->branch_root_cb = branch_root_cb;
                             }
                             callback->set_branch_id(0);
-
 
                             callback->root_cb = root_cb;
                             // callback->set_nonlinear(false);
@@ -564,16 +567,20 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
         auto raw_thread = std::make_shared<std::thread>(&executor::run, this, thread);
         raw_threads.push_back(raw_thread);
         thread->assign_thread_ptr(raw_thread);
+
         while (!thread->get_threadID())
             ;
         std::cout << "Thread ID: " << thread->get_threadID() << "(" << thread->logical_thread_id << ")" << std::endl;
         if (num_rt_threads > 0)
         {
             std::cout << "Creating RT Thread No. " << num_rt_threads << std::endl;
+            std::string thread_name = "RT Thread " + std::to_string(num_threads - num_rt_threads);
+            thread->set_thread_name(thread_name);
+            std::cout << "Thread Name: " << thread->get_thread_name() << std::endl;
             thread->set_policy(SCHED_DEADLINE);
             // thread->set_priority(0);
             // thread->set_budget(THREAD_PERIOD);
-            thread->set_budget(THREAD_PERIOD - 10240);
+            thread->set_budget(THREAD_PERIOD - US_OFFSET);
             cpu_set_t cpuSet;
             CPU_ZERO(&cpuSet);
             num_rt_threads--;
@@ -583,7 +590,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
             // attr.sched_runtime = THREAD_PERIOD;
-            attr.sched_runtime = THREAD_PERIOD - 10240;
+            attr.sched_runtime = THREAD_PERIOD - US_OFFSET;
             attr.sched_period = THREAD_PERIOD;   // 200ms period
             attr.sched_deadline = THREAD_PERIOD; // 200ms deadline
             attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
@@ -597,9 +604,13 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
 #ifdef LATENCY_MGMT
         else if (num_be_threads > 0)
         {
+            std::cout << "Creating BE Thread No. " << num_be_threads << std::endl;
+            std::string thread_name = "BE Thread " + std::to_string(num_threads - num_be_threads);
+            thread->set_thread_name(thread_name);
+            std::cout << "Thread Name: " << thread->get_thread_name() << std::endl;
             thread->set_policy(SCHED_DEADLINE);
             // thread->set_priority(0);
-            thread->set_budget(10240);
+            thread->set_budget(US_OFFSET);
             cpu_set_t cpuSet;
             CPU_ZERO(&cpuSet);
             num_be_threads--;
@@ -608,7 +619,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             struct sched_attr attr;
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
-            attr.sched_runtime = 10240;
+            attr.sched_runtime = US_OFFSET;
             attr.sched_period = THREAD_PERIOD;   // 10ms period
             attr.sched_deadline = THREAD_PERIOD; // 10ms deadline
             attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
@@ -627,6 +638,98 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
     std::cout << "Threads created, waiting for them to finish" << std::endl;
 }
 
+// template <typename... Args>
+// std::string string_format(const std::string &format, Args... args)
+// {
+//     // First, find the size needed
+//     int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
+//     if (size_s <= 0)
+//     {
+//         throw std::runtime_error("Error in string_format while formatting.");
+//     }
+
+//     // Allocate the exact buffer
+//     auto size = static_cast<size_t>(size_s);
+//     std::unique_ptr<char[]> buf(new char[size]);
+
+//     // Do the actual formatting
+//     std::snprintf(buf.get(), size, format.c_str(), args...);
+
+//     // Convert to std::string (excluding the null terminator)
+//     return std::string(buf.get(), buf.get() + size - 1);
+// }
+// uint32_t s_colorPalette[] = {
+//     0xFFFF0000, // red
+//     0xFF00FF00, // green
+//     0xFF0000FF, // blue
+//     0xFFFFFF00, // yellow
+//     0xFFFF00FF, // magenta
+//     0xFF00FFFF, // cyan
+//     0xFFFF8000, // orange
+//     0xFF808000, // olive
+//     0xFF808080  // gray
+//                 // Add more if desired
+// };
+// class NvtxScopedRange
+// {
+// public:
+//     NvtxScopedRange(const std::string &message)
+//     {
+//         std::stringstream ss;
+//         ss << std::this_thread::get_id();
+//         std::string thread_name = ss.str();
+//         int color_idx = 0;
+//         if (strcmp(thread_name.substr(0, 2).c_str(), "RT"))
+//         {
+//             color_idx = std::stoi(thread_name.substr(10, 1).c_str()) - 1;
+//         }
+//         else
+//         {
+//             // num threads per threadclass = 4
+//             color_idx = 3 + std::stoi(thread_name.substr(10, 1));
+//         }
+//         nvtxEventAttributes_t eventAttrib = {};
+//         eventAttrib.version = NVTX_VERSION;
+//         eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
+//         // Which thread am I on? Pick color based on the name
+//         uint32_t argbColor = s_colorPalette[color_idx];
+//         eventAttrib.colorType = NVTX_COLOR_ARGB;
+//         eventAttrib.color = argbColor;
+//         // Set the label
+//         eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII;
+//         eventAttrib.message.ascii = message.c_str();
+//         // range_id_ = nvtxRangeStartA(message.c_str());
+//         nvtxRangePushEx(&eventAttrib);
+//     }
+//     ~NvtxScopedRange()
+//     {
+//         nvtxRangePop();
+//         // nvtxRangeEnd(range_id_);
+//     }
+
+// private:
+//     nvtxRangeId_t range_id_;
+// };
+template <typename... Args>
+std::string string_format(const std::string &format, Args... args)
+{
+    // First, find the size needed
+    int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
+    if (size_s <= 0)
+    {
+        throw std::runtime_error("Error in string_format while formatting.");
+    }
+
+    // Allocate the exact buffer
+    auto size = static_cast<size_t>(size_s);
+    std::unique_ptr<char[]> buf(new char[size]);
+
+    // Do the actual formatting
+    std::snprintf(buf.get(), size, format.c_str(), args...);
+
+    // Convert to std::string (excluding the null terminator)
+    return std::string(buf.get(), buf.get() + size - 1);
+}
 void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThreadedExecutor::run()
 {
     thread_id = (int)t->logical_thread_id;
@@ -667,17 +770,40 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
             }
         }
 #endif
+        // {
+        //     // LOGGER("[run] thread %lu", thread_id);
+        //     std::lock_guard wait_lock{wait_mutex_};
+        //     // LOGGER("[run] thread %lu - lock acquired", thread_id);
+        //     if (!rclcpp::ok(this->context_) || !spinning.load())
+        //     {
+        //         return;
+        //     }
+        //     if (!get_next_executable(any_exec, next_exec_timeout_))
+        //     {
+        //         continue;
+        //     }
+        // }
         {
-            // LOGGER("[run] thread %lu", thread_id);
+            auto thing = is_rt_thread ? "RT" : "BE";
+            int dbg_tid = thread_id % number_of_threads_;
+            nvtxRangeId_t range_id = nvtxRangeStartA(string_format("%s Thread %i getting lock", thing, dbg_tid).c_str());
             std::lock_guard wait_lock{wait_mutex_};
-            // LOGGER("[run] thread %lu - lock acquired", thread_id);
-            if (!rclcpp::ok(this->context_) || !spinning.load())
+            nvtxRangeEnd(range_id);
+
+            PICAS_INFO("[run] thread %lu", thread_id);
+            //std::lock_guard wait_lock{wait_mutex_};
             {
-                return;
-            }
-            if (!get_next_executable(any_exec, next_exec_timeout_))
-            {
-                continue;
+                int dbg_tid = thread_id % number_of_threads_;
+                NvtxScopedRange r(string_format("%s Thread %i holding lock", thing, dbg_tid));
+                PICAS_INFO("[run] thread %lu - lock acquired", thread_id);
+                if (!rclcpp::ok(this->context_) || !spinning.load())
+                {
+                    return;
+                }
+                if (!get_next_executable(any_exec, next_exec_timeout_))
+                {
+                    continue;
+                }
             }
         }
         // LOGGER("[run] thread %lu - get next executable", thread_id);

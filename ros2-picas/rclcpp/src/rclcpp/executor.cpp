@@ -36,7 +36,65 @@
 #include "tracetools/tracetools.h"
 
 #include <rclcpp/picas.hpp>
+#include <nvtx3/nvToolsExt.h>  // sometimes needed
 
+class NvtxScopedRange
+{
+public:
+    NvtxScopedRange(const std::string &message)
+    {
+        std::stringstream ss;
+        //ss << std::this_thread::get_id();
+        // use pthread get name
+        pthread_t thread = pthread_self();
+        char thread_name_c[16];
+        pthread_getname_np(thread, thread_name_c, sizeof(thread_name_c));
+        ss << thread_name_c;
+        std::string thread_name = ss.str();
+        int color_idx = 0;
+        if (strcmp(thread_name.substr(0, 2).c_str(), "RT"))
+        {
+            color_idx = std::stoi(thread_name.substr(10, 1).c_str());
+        }
+        else
+        {
+            // num threads per threadclass = 4
+            color_idx = 4 + std::stoi(thread_name.substr(10, 1));
+        }
+        nvtxEventAttributes_t eventAttrib = {};
+        eventAttrib.version = NVTX_VERSION;
+        eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
+        // Which thread am I on? Pick color based on the name
+        uint32_t argbColor = s_colorPalette[color_idx];
+        eventAttrib.colorType = NVTX_COLOR_ARGB;
+        eventAttrib.color = argbColor;
+        // Set the label
+        eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII;
+        eventAttrib.message.ascii = (thread_name + message).c_str();
+        // range_id_ = nvtxRangeStartA(message.c_str());
+        //nvtxRangePushEx(&eventAttrib);
+        range_id_ = nvtxRangeStartEx(&eventAttrib);
+    }
+    ~NvtxScopedRange()
+    {
+        //nvtxRangePop();
+        nvtxRangeEnd(range_id_);
+    }
+
+private:
+        nvtxRangeId_t range_id_;
+        uint32_t s_colorPalette[9] = {
+        0xFFFF0000, // red
+        0xFF00FF00, // green
+        0xFF0000FF, // blue
+        0xFFFFFF00, // yellow
+        0xFFFF00FF, // magenta
+        0xFF00FFFF, // cyan
+        0xFFFF8000, // orange
+        0xFF808000, // olive
+        0xFF808080  // gray
+    };
+};
 #ifdef PICAS
 #include "rclcpp/memory_strategy.hpp"
 using rclcpp::memory_strategy::MemoryStrategy;
@@ -710,6 +768,7 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
 {
   TRACEPOINT(rclcpp_executor_wait_for_work, timeout.count());
   {
+    NvtxScopedRange range("wait_for_work: memory_strategy lock");
     std::lock_guard<std::mutex> guard(mutex_);
 
     // Check weak_nodes_ to find any callback group that is not owned
@@ -754,7 +813,8 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
           weak_groups_to_nodes_.erase(group_ptr);
         });
     }
-
+{
+    NvtxScopedRange range("wait_for_work: clear and resize waitset");
     // clear wait set
     rcl_ret_t ret = rcl_wait_set_clear(&wait_set_);
     if (ret != RCL_RET_OK) {
@@ -770,7 +830,7 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
     if (RCL_RET_OK != ret) {
       throw_from_rcl_error(ret, "Couldn't resize the wait set");
     }
-
+}
     if (!memory_strategy_->add_handles_to_wait_set(&wait_set_)) {
       throw std::runtime_error("Couldn't fill wait set");
     }
@@ -858,6 +918,7 @@ Executor::get_next_ready_executable_from_map(
   const rclcpp::memory_strategy::MemoryStrategy::WeakCallbackGroupsToNodesMap &
   weak_groups_to_nodes)
 {
+  NvtxScopedRange range("get_next_ready_executable");
   TRACEPOINT(rclcpp_executor_get_next_ready);
   bool success = false;
   std::lock_guard<std::mutex> guard{mutex_};

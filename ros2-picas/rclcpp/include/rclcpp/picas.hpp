@@ -51,10 +51,63 @@ static inline bool is_timespec_equal(struct timespec &t1, struct timespec &t2)
 
 #include <mutex>
 #include <condition_variable>
+#include <boost/lockfree/queue.hpp>
 #include <queue>
 
 extern thread_local size_t thread_id;
 extern thread_local bool is_rt_thread;
+
+#if 1
+class ordered_mutex {
+  std::atomic<bool> locked_{false};
+  std::queue<size_t> rt_wait_queue_;
+  std::queue<size_t> be_wait_queue_;
+  std::mutex global_mutex_;
+  std::atomic<size_t> owner_id_{0};
+
+public:
+  void lock() {
+    size_t tid = thread_id;
+    {
+      std::lock_guard<std::mutex> lock(global_mutex_);
+      if (is_rt_thread) {
+        rt_wait_queue_.push(tid);
+      } else {
+        be_wait_queue_.push(tid);
+      }
+    }
+
+    while (true) {
+      std::lock_guard<std::mutex> lock(global_mutex_);
+      if (!locked_.load(std::memory_order_acquire)) {
+        if (!rt_wait_queue_.empty() && rt_wait_queue_.front() == tid) {
+          rt_wait_queue_.pop();
+        } else if (!be_wait_queue_.empty() && be_wait_queue_.front() == tid) {
+          be_wait_queue_.pop();
+        } else {
+          continue;
+        }
+        
+        locked_.store(true, std::memory_order_acquire);
+        owner_id_.store(tid, std::memory_order_release);
+        return;
+      }
+    }
+  }
+
+  void unlock() {
+    std::lock_guard<std::mutex> lock(global_mutex_);
+    if (owner_id_.load(std::memory_order_acquire) == thread_id) {
+      owner_id_.store(0, std::memory_order_release);
+      locked_.store(false, std::memory_order_release);
+    }
+  }
+};
+
+
+#endif
+
+
 
 #if 0
 class ordered_mutex {
@@ -115,7 +168,7 @@ public:
   }
 };
 #endif
-
+#if 0
 class ordered_mutex {
   std::mutex mutex_;
   std::condition_variable cv_;
@@ -158,7 +211,7 @@ public:
     cv_.notify_all();
   }
 };
-
+#endif
 #ifdef PICAS_DEBUG
 #include <sys/time.h>
 #include <execinfo.h>

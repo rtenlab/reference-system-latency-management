@@ -7,6 +7,9 @@
 
 #include <thread.hpp>
 #include <stdio.h>
+
+// NVTX DEBUG
+#include <nvtx3/nvToolsExt.h>  // sometimes needed
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
 
@@ -319,7 +322,16 @@ bool executor_thread::get_rt()
 {
     return rt;
 }
-
+int executor_thread::set_thread_name(const std::string &name){
+    pthread_setname_np(t->native_handle(), name.c_str());
+    nvtxNameOsThread(pthread_self(), name.c_str());
+    return 0;
+}
+std::string executor_thread::get_thread_name(){
+    char name[16];
+    pthread_getname_np(t->native_handle(), name, 16);
+    return std::string(name);
+}
 void executor_thread::add_callback(std::shared_ptr<Callback> callback)
 {
     //callbacks.insert(std::make_pair(callback->getUUID(), callback));

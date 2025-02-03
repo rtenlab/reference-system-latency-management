@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include <linux/list.h>
 #include <linux/device.h>
+#include <linux/cdev.h>
 
 #define DEVICE_NAME "rt_be_mutex"
 #define IOCTL_LOCK   _IOW('r', 1, int)
@@ -17,18 +18,19 @@
 
 static dev_t dev_number;           // Device number (major + minor)
 static struct class *dev_class;    // Device class
+static struct cdev rt_be_cdev;     // Character device structure
 static struct semaphore sem;       // Semaphore for protecting critical sections
 
 // Mutex structure with separate RT and BE queues
 struct rt_be_mutex {
     pid_t owner;                   // PID of the task holding the lock
-    struct list_head rt_queue;     // RT queue (linked list)
-    struct list_head be_queue;     // BE queue (linked list)
+    struct list_head rt_queue;      // RT queue (linked list)
+    struct list_head be_queue;      // BE queue (linked list)
 };
 
 struct task_node {
-    struct task_struct *task;      // Task waiting for the lock
-    struct list_head list;         // List node
+    struct task_struct *task;       // Task waiting for the lock
+    struct list_head list;          // List node
 };
 
 static struct rt_be_mutex my_mutex;
@@ -74,15 +76,16 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt) {
     return 0;
 }
 
-// Unlock function
 static int rt_be_mutex_unlock(struct rt_be_mutex *mutex) {
     struct task_node *next_task;
     struct list_head *queue;
 
     down(&sem);
 
+    printk(KERN_INFO "rt_be_mutex: Unlock requested by PID %d (current owner: %d)\n", current->pid, mutex->owner);
+
     if (mutex->owner != current->pid) {
-        // Only the owner can release the lock
+        printk(KERN_ALERT "rt_be_mutex: Unlock failed! PID %d is not the owner\n", current->pid);
         up(&sem);
         return -EPERM;
     }
@@ -107,19 +110,21 @@ static int rt_be_mutex_unlock(struct rt_be_mutex *mutex) {
     wake_up_process(next_task->task); // Wake up the next task
     kfree(next_task);
 
+    printk(KERN_INFO "rt_be_mutex: Lock transferred to PID %d\n", mutex->owner);
+
     up(&sem);
     return 0;
 }
 
-// ioctl handler
+
 static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     int task_type;
 
-    if (copy_from_user(&task_type, (int __user *)arg, sizeof(task_type)))
-        return -EFAULT;
-
     switch (cmd) {
         case IOCTL_LOCK:
+            if (copy_from_user(&task_type, (int __user *)arg, sizeof(task_type)))
+                return -EFAULT;
+
             if (task_type == TASK_TYPE_RT) {
                 return rt_be_mutex_lock(&my_mutex, true);
             } else if (task_type == TASK_TYPE_BE) {
@@ -129,17 +134,18 @@ static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
             }
 
         case IOCTL_UNLOCK:
-            return rt_be_mutex_unlock(&my_mutex);
+            return rt_be_mutex_unlock(&my_mutex);  // 🔹 Fix: No copy_from_user
 
         default:
             return -EINVAL;
     }
 }
 
+
 // File operations
 static struct file_operations fops = {
-    .unlocked_ioctl = dev_ioctl,
     .owner = THIS_MODULE,
+    .unlocked_ioctl = dev_ioctl,
 };
 
 // Module initialization
@@ -159,9 +165,20 @@ static int __init rt_be_mutex_init(void) {
         return result;
     }
 
+    // Initialize and add cdev
+    cdev_init(&rt_be_cdev, &fops);
+    rt_be_cdev.owner = THIS_MODULE;
+    result = cdev_add(&rt_be_cdev, dev_number, 1);
+    if (result < 0) {
+        unregister_chrdev_region(dev_number, 1);
+        printk(KERN_ALERT "rt_be_mutex: Failed to add cdev\n");
+        return result;
+    }
+
     // Create device class
     dev_class = class_create(THIS_MODULE, DEVICE_NAME);
     if (IS_ERR(dev_class)) {
+        cdev_del(&rt_be_cdev);
         unregister_chrdev_region(dev_number, 1);
         printk(KERN_ALERT "rt_be_mutex: Failed to create device class\n");
         return PTR_ERR(dev_class);
@@ -170,6 +187,7 @@ static int __init rt_be_mutex_init(void) {
     // Create device
     if (device_create(dev_class, NULL, dev_number, NULL, DEVICE_NAME) == NULL) {
         class_destroy(dev_class);
+        cdev_del(&rt_be_cdev);
         unregister_chrdev_region(dev_number, 1);
         printk(KERN_ALERT "rt_be_mutex: Failed to create device\n");
         return -1;
@@ -183,6 +201,7 @@ static int __init rt_be_mutex_init(void) {
 static void __exit rt_be_mutex_exit(void) {
     device_destroy(dev_class, dev_number);
     class_destroy(dev_class);
+    cdev_del(&rt_be_cdev);
     unregister_chrdev_region(dev_number, 1);
     printk(KERN_INFO "rt_be_mutex: Module unloaded\n");
 }
@@ -193,4 +212,3 @@ module_exit(rt_be_mutex_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Daniel Enright");
 MODULE_DESCRIPTION("RT-BE Mutex Module with Dynamic Major Allocation");
-

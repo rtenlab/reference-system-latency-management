@@ -70,6 +70,8 @@ public:
     int get_budget();
     //void set_global_queue_mutex(ordered_mutex* global_queue_mutex);
     int set_sched_deadline(struct sched_attr attr, unsigned int flags);
+    int set_thread_name(const std::string &name);
+    std::string get_thread_name();
 
     int logical_thread_id;
 

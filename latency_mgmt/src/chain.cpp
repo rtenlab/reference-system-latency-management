@@ -217,6 +217,15 @@ std::shared_ptr<Callback> Chain::getCallback(boost::uuids::uuid callbackUUID)
     return nullptr;
 }
 
+struct timeval Chain::get_Rj(){
+    return this->Rj;
+}
+
+void Chain::set_Rj(struct timeval Rj){
+    this->Rj = Rj;
+}
+
+
 uint64_t Chain::getChainResponseTime(int branch_id)
 {
     // get worst case response time from history

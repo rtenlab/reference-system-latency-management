@@ -6,6 +6,29 @@
 #include "rclcpp/rclcpp.hpp"
 #include "test_interfaces/msg/test_string.hpp"
 
+template <typename... Args>
+std::string string_format(const std::string &format, Args... args)
+{
+    // First, find the size needed
+    int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
+    if (size_s <= 0)
+    {
+        throw std::runtime_error("Error in string_format while formatting.");
+    }
+
+    // Allocate the exact buffer
+    auto size = static_cast<size_t>(size_s);
+    std::unique_ptr<char[]> buf(new char[size]);
+
+    // Do the actual formatting
+    std::snprintf(buf.get(), size, format.c_str(), args...);
+
+    // Convert to std::string (excluding the null terminator)
+    return std::string(buf.get(), buf.get() + size - 1);
+}
+
+
+
 #define USE_INTRA_PROCESS_COMMS false
 // #define USE_INTRA_PROCESS_COMMS true // TODO: intra comm doesn't seem to work properly for BE threads (is_rt_thread == false) with PICAS_THREAD_AFFINITY
 using std::placeholders::_1;
@@ -53,12 +76,12 @@ Callback::Callback(CallbackType type, struct timeval period, int chainID, int pl
     setPeriod(period);
     if (sub_topic != "")
     {
-        //chain_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-        //rclcpp::SubscriptionOptions options;
-        //options.callback_group = chain_cb_group_;
-        // subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1), options);
-        // this->add_callback_group(chain_cb_group_);
-        // chain_cb_group_->add_subscription(subscription_);
+        // chain_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        // rclcpp::SubscriptionOptions options;
+        // options.callback_group = chain_cb_group_;
+        //  subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1), options);
+        //  this->add_callback_group(chain_cb_group_);
+        //  chain_cb_group_->add_subscription(subscription_);
         subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1));
     }
 
@@ -66,7 +89,8 @@ Callback::Callback(CallbackType type, struct timeval period, int chainID, int pl
     {
         publisher_ = this->create_publisher<test_interfaces::msg::TestString>(pub_topic, 1);
     }
-    else{
+    else
+    {
         this->end_callback = true;
     }
 }
@@ -79,18 +103,19 @@ Callback::Callback(CallbackType type, struct timeval period, int chainID, int pl
     setPeriod(period);
     if (sub_topic != "")
     {
-        //chain_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-        //rclcpp::SubscriptionOptions options;
-        //options.callback_group = chain_cb_group_;
-        //subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1), options);
-        // this->add_callback_group(chain_cb_group_);
-    subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1));
+        // chain_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        // rclcpp::SubscriptionOptions options;
+        // options.callback_group = chain_cb_group_;
+        // subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1), options);
+        //  this->add_callback_group(chain_cb_group_);
+        subscription_ = this->create_subscription<test_interfaces::msg::TestString>(sub_topic, 1, std::bind(&Callback::execute_sub, this, _1));
     }
     if (pub_topic != "")
     {
         publisher_ = this->create_publisher<test_interfaces::msg::TestString>(pub_topic, 1);
     }
-    else{
+    else
+    {
         this->end_callback = true;
     }
 }
@@ -123,9 +148,9 @@ void Callback::start_timer()
         if (!timer_)
         {
 
-            //chain_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-            //timer_ = this->create_wall_timer(chrono_period, std::bind(&Callback::execute_timer, this), chain_cb_group_);
-            // this->add_callback_group(chain_cb_group_);
+            // chain_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+            // timer_ = this->create_wall_timer(chrono_period, std::bind(&Callback::execute_timer, this), chain_cb_group_);
+            //  this->add_callback_group(chain_cb_group_);
             timer_ = this->create_wall_timer(chrono_period, std::bind(&Callback::execute_timer, this));
             exec->set_callback_priority(timer_, priority); // Needed if callback priority was set before the timer object was created
         }
@@ -232,14 +257,16 @@ void Callback::printCallback()
     std::cout << "Callback Num Cruncher Limit: " << this->num_cruncher_limit << std::endl;
     std::cout << "Callback Priority: " << this->priority << std::endl;
     std::cout << "Callback is nonlinear:" << this->is_nonlinear << std::endl;
-    if(this->is_nonlinear){
-        std::cout << "Nonlinear Callback Stored Root Time: " << this->root_rt.tv_sec*1e6 + this->root_rt.tv_usec << std::endl;
+    if (this->is_nonlinear)
+    {
+        std::cout << "Nonlinear Callback Stored Root Time: " << this->root_rt.tv_sec * 1e6 + this->root_rt.tv_usec << std::endl;
     }
     // if(this->root_cb){
     //     std::cout << "Root Callback: " << root_cb->getName() << std::endl;
     // }
-    if(this->branch_root_cb){
-        std::cout << "Part of nonlinear chain, branch root: " << branch_root_cb->getName() << " Time: " << branch_root_cb->root_rt.tv_sec*1e6 + branch_root_cb->root_rt.tv_usec << std::endl;
+    if (this->branch_root_cb)
+    {
+        std::cout << "Part of nonlinear chain, branch root: " << branch_root_cb->getName() << " Time: " << branch_root_cb->root_rt.tv_sec * 1e6 + branch_root_cb->root_rt.tv_usec << std::endl;
     }
     std::cout << std::endl;
 }
@@ -316,6 +343,12 @@ void Callback::execute_timer()
     struct timeval rec_start, rec_end;
 
     int chain_instance_id;
+    chain_instance_id = getSequenceNumber(); // Capture the chain instance ID
+
+    // std::string to pass into the scoped range using sprintf
+    NvtxScopedRange r(string_format("Callback %s, instance %d", name.c_str(), chain_instance_id).c_str());
+    // nvtx3::scoped_range range{string_format("Callback %s, instance %d", name.c_str(), chain_instance_id).c_str()};
+
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
 
     // change timer to clock get time for thread
@@ -336,8 +369,8 @@ void Callback::execute_timer()
         ///////////////////////////////////////////////////////////
 
         // Increment and assign the sequence number atomically for the global sequence
-        increment_sequence_number();             // Increment the sequence number
-        chain_instance_id = getSequenceNumber(); // Capture the chain instance ID
+        increment_sequence_number(); // Increment the sequence number
+        // chain_instance_id = getSequenceNumber(); // Capture the chain instance ID
         uint64_t time_until_next_period_usec = std::chrono::duration_cast<std::chrono::microseconds>(timer_->time_until_trigger()).count();
         uint64_t period_usec = timerPeriod.tv_sec * 1e6 + timerPeriod.tv_usec;
         add_branch_timestamp(chain_instance_id, period_usec - time_until_next_period_usec); // Add the initial timestamp for the chain instance
@@ -347,19 +380,19 @@ void Callback::execute_timer()
     }
     volatile uint64_t result = number_cruncher(num_cruncher_limit);
     (void)result;
-    //struct timeval current_time;
-    //gettimeofday(&current_time, NULL);
+    // struct timeval current_time;
+    // gettimeofday(&current_time, NULL);
     test_interfaces::msg::TestString::UniquePtr message(new test_interfaces::msg::TestString());
     message->data = std::to_string(chain_instance_id);
-    //message->stamp.sec = current_time.tv_sec;
-    //message->stamp.usec = current_time.tv_usec;
+    // message->stamp.sec = current_time.tv_sec;
+    // message->stamp.usec = current_time.tv_usec;
     if (publisher_)
         publisher_->publish(std::move(message));
     else
     {
         RCLCPP_ERROR(this->get_logger(), "Publisher not set for callback %s", name.c_str());
     }
-    
+
     // auto message = test_interfaces::msg::TestString();
     // message.data = std::to_string(chain_instance_id);
     // if (publisher_)
@@ -370,12 +403,11 @@ void Callback::execute_timer()
     // }
     // if the recording delay has not been changed from the default value, record the time it takes to log the response time
     struct timespec start_ts, end_ts;
-    
-    
+
     if (!timerisset(&recording_delay))
     {
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start_ts);
-        //gettimeofday(&rec_start, NULL);
+        // gettimeofday(&rec_start, NULL);
     }
     ///////////////////////////////////////////////////////////
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
@@ -392,7 +424,7 @@ void Callback::execute_timer()
     }
     if (!timerisset(&recording_delay))
     {
-        //gettimeofday(&rec_end, NULL);
+        // gettimeofday(&rec_end, NULL);
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end_ts);
         timespec_to_timeval(&start_ts, &rec_start);
         timespec_to_timeval(&end_ts, &rec_end);
@@ -408,29 +440,33 @@ std::mutex &Callback::get_mutex()
 // void Callback::execute_sub(const test_interfaces::msg::TestString::SharedPtr msg)
 void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg)
 {
+
     struct timespec start, end;
     struct timeval start_tv, end_tv;
     struct timeval rec_start, rec_end;
     struct timeval msg_rec, msg_sent;
     struct timeval current_time;
+    int chain_instance_id = std::stoi(msg->data); // Capture the chain instance ID
+
+    NvtxScopedRange r(string_format("Callback %s, instance %d", name.c_str(), chain_instance_id).c_str());
+
     // change timer to clock get time for thread
     // gettimeofday(&start_tv, NULL);
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
 
-    //gettimeofday(&msg_rec, NULL); // msg received timestamp
+    // gettimeofday(&msg_rec, NULL); // msg received timestamp
 
-    int chain_instance_id = std::stoi(msg->data); // Capture the chain instance ID
     // capture when the message was sent
-    //msg_sent.tv_sec = msg->stamp.sec;
-    //msg_sent.tv_usec = msg->stamp.usec;
-   // timersub(&msg_rec, &msg_sent, &msg_rec);
+    // msg_sent.tv_sec = msg->stamp.sec;
+    // msg_sent.tv_usec = msg->stamp.usec;
+    // timersub(&msg_rec, &msg_sent, &msg_rec);
 
-    //std::cerr << "Transmission delay: " << msg_rec.tv_sec << "s " << msg_rec.tv_usec << "us" << " for callback " << name << std::endl;
+    // std::cerr << "Transmission delay: " << msg_rec.tv_sec << "s " << msg_rec.tv_usec << "us" << " for callback " << name << std::endl;
 
     // if(timercmp(&msg_rec, &message_delay, >))
     // {
     //     // this is a total transmission delay + queueing delay + blocking time -- do not use in calculations
-    //     message_delay = msg_rec; 
+    //     message_delay = msg_rec;
     //     //std::cerr << "Message delay: " << message_delay.tv_sec << "s " << message_delay.tv_usec << "us" << " for callback " << name << std::endl;
     // }
 
@@ -441,11 +477,11 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg
     volatile uint64_t result = number_cruncher(num_cruncher_limit);
     (void)result;
 
-    //gettimeofday(&current_time, NULL);
+    // gettimeofday(&current_time, NULL);
     test_interfaces::msg::TestString::UniquePtr message(new test_interfaces::msg::TestString());
     message->data = std::to_string(chain_instance_id);
-    //message->stamp.sec = current_time.tv_sec;
-    //message->stamp.usec = current_time.tv_usec;
+    // message->stamp.sec = current_time.tv_sec;
+    // message->stamp.usec = current_time.tv_usec;
     if (publisher_)
         publisher_->publish(std::move(message));
 
@@ -455,17 +491,14 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg
     //     publisher_->publish(message);
     // if the recording delay has not been changed from the default value, record the time it takes to log the response time
     struct timespec start_ts, end_ts;
-    
-    
+
     if (!timerisset(&recording_delay))
     {
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start_ts);
-        //gettimeofday(&rec_start, NULL);
+        // gettimeofday(&rec_start, NULL);
     }
     ///////////////////////////////////////////////////////////
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
-
-
 
     timespec_to_timeval(&start, &start_tv);
     timespec_to_timeval(&end, &end_tv);
@@ -473,8 +506,8 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg
     struct timeval execution_time;
     timersub(&end_tv, &start_tv, &execution_time);
     timeradd(&execution_time, &recording_delay, &execution_time);
-    //timeradd(&execution_time, &message_delay, &execution_time);
-    // std::cout << "Callback: " << callback->getName() << " executed in " << execution_time.tv_sec << "s " << execution_time.tv_usec << "us by thread: " << std::this_thread::get_id() << std::endl;
+    // timeradd(&execution_time, &message_delay, &execution_time);
+    //  std::cout << "Callback: " << callback->getName() << " executed in " << execution_time.tv_sec << "s " << execution_time.tv_usec << "us by thread: " << std::this_thread::get_id() << std::endl;
     addExecutionTimeToHistory(execution_time);
     if (!publisher_)
     { // last callback: record response time
@@ -482,7 +515,7 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg
     }
     if (!timerisset(&recording_delay))
     {
-        //gettimeofday(&rec_end, NULL);
+        // gettimeofday(&rec_end, NULL);
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end_ts);
         timespec_to_timeval(&start_ts, &rec_start);
         timespec_to_timeval(&end_ts, &rec_end);
@@ -507,23 +540,22 @@ void Callback::record_response_time(int chain_instance_id)
     // struct timeval chain_base_time = chain->getFirstCallback()->get_last_branch_timestamp(chain_instance_id);
 
     struct timeval chain_base_time;
-    if(branch_root_cb != nullptr){
-        // check to see if the if the current callback is 
+    if (branch_root_cb != nullptr)
+    {
+        // check to see if the if the current callback is
 
-        //volatile int branch_root_root_time = branch_root_cb->root_rt.tv_usec + branch_root_cb->root_rt.tv_sec*1e6; 
-        //std::cout << "end callback: " << this->name << " branch_root time: " << branch_root_root_time << " branch_root_cb_name: " << this->branch_root_cb->getName() << std::endl;
+        // volatile int branch_root_root_time = branch_root_cb->root_rt.tv_usec + branch_root_cb->root_rt.tv_sec*1e6;
+        // std::cout << "end callback: " << this->name << " branch_root time: " << branch_root_root_time << " branch_root_cb_name: " << this->branch_root_cb->getName() << std::endl;
 
         chain_base_time = this->branch_root_cb->root_cb->get_first_branch_timestamp(chain_instance_id);
     }
-    else{
+    else
+    {
         chain_base_time = chain->getFirstCallback()->get_first_branch_timestamp(chain_instance_id);
-
     }
-    
+
     struct timeval chain_ex_time;
-    
-    
-    
+
     timersub(&chain_stop_time, &chain_base_time, &chain_ex_time);
     chain->add_response_time_to_history(get_branch_id(), chain_ex_time);
 
@@ -601,7 +633,6 @@ void Callback::set_timer_running(bool timer_running)
 {
     this->timer_running = timer_running;
 }
-
 
 // the following have memory leaks
 void Callback::add_branch_timestamp(int chain_instance_id)
