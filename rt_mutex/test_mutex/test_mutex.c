@@ -3,7 +3,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <stdlib.h>
-
+#include <stdint.h>
 #define DEVICE_PATH "/dev/rt_be_mutex"
 
 // ioctl commands
@@ -13,6 +13,11 @@
 // Task types
 #define TASK_TYPE_RT 1
 #define TASK_TYPE_BE 2
+void busy_wait_nop(uint64_t iterations) {
+    while (iterations--) {
+        asm volatile ("nop");
+    }
+}
 
 int main(int argc, char *argv[]) {
     int fd, task_type;
@@ -42,8 +47,14 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     printf("Lock acquired!\n");
+    uint64_t frequency = 2200000000ULL;  // 2.2 GHz
+    uint64_t duration_seconds = 3;
+    uint64_t total_nop_iterations = frequency * duration_seconds;
 
-    sleep(5); // Simulate critical section
+    //instead of sleep, just loop 'nop' for about 3 seconds at 2.2ghz
+    busy_wait_nop(total_nop_iterations);
+
+    //sleep(5); // Simulate critical section
 
     printf("Releasing lock...\n");
     if (ioctl(fd, IOCTL_UNLOCK, NULL) < 0) {
