@@ -2,6 +2,7 @@
 
 #ifndef CALLBACK_HPP
 #define CALLBACK_HPP
+
 class executor;
 class State;
 
@@ -131,6 +132,11 @@ public:
     rclcpp::CallbackGroup::SharedPtr chain_cb_group_;
     executor* exec;
 
+    std::shared_ptr<Callback> root_cb = nullptr;
+    std::shared_ptr<Callback> branch_root_cb = nullptr;
+    struct timeval root_rt = {0, 0};
+    bool end_callback = false;
+
 private:
     struct timeval timerPeriod;
     struct timeval executionTime = {0,0};
@@ -156,6 +162,8 @@ private:
     std::deque<struct timeval> non_state_aware_ex_time_history;
     ordered_mutex execution_history_mutex_;
     std::mutex timer_mutex_;
+
+
 };
 
 

@@ -35,7 +35,6 @@ void set_rt_runtime_unlimited();
 void set_rt_period();
 
 
-
 int main(int argc, char * argv[])
 {
     // if not root, exit
@@ -96,10 +95,10 @@ void set_rt_period() {
 
 
 void test_case_1(){
-   int n_cpus = 3;
+   int n_cpus = 5;
     executor ex(n_cpus);
 
-    auto chain1_2_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain1_2_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain1_2 = std::make_shared<Chain>(0);
     auto c0_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 0, 1, 22, "front_lidar_driver", "", "c0_cb1", 1000, chain1_2_cb_group);
@@ -138,7 +137,7 @@ void test_case_1(){
     chain_criticalities.push_back(2);
     chain_criticalities.push_back(0);
     chain1_2->setPriorities(chain_criticalities);
-    auto chain3_4_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain3_4_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain3_4 = std::make_shared<Chain>(1);
     auto c1_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 1, 1, 32, 0, "behavior_planner_timer", "", "c1_cb1", 1000, chain3_4_cb_group, true);
@@ -166,7 +165,7 @@ void test_case_1(){
     chain_criticalities2.push_back(0);
     chain3_4->setPriorities(chain_criticalities2);
 
-    auto chain5_6_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain5_6_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain5_6 = std::make_shared<Chain>(2);
     auto c2_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 60000}, 2, 1, 6, 0, "visualizer", "", "c2_cb1", 1000, chain5_6_cb_group, true);
     auto c2_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 2, 2, 8, 0, "lanelet_2_global_planner", "c2_cb1", "c2_cb2", 65536, chain5_6_cb_group);
@@ -189,7 +188,7 @@ void test_case_1(){
     chain_criticalities3.push_back(0);
     chain5_6->setPriorities(chain_criticalities3);
 
-    auto chain7_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain7_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain7 = std::make_shared<Chain>(3);
     auto c3_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 3, 1, 23, "rear_lidar_driver", "", "c3_cb1", 1000, chain7_cb_group);
     auto c3_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 3, 2, 25, "points_transformer_rear", "c3_cb1", "c3_cb2", 65536, chain7_cb_group);
@@ -207,7 +206,7 @@ void test_case_1(){
     chain_criticalities4.push_back(1);
     chain7->setPriorities(chain_criticalities4);
 
-    auto chain8_9_10_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain8_9_10_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain8_9_10 = std::make_shared<Chain>(4);
     auto c4_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 4, 1, 9, "lanelet_2_map", "", "c4_cb1", 1000, chain8_9_10_cb_group);
     auto c4_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 4, 2, 11, 0, "lanelet_2_map_loader", "c4_cb1", "c4_cb2", 65536, chain8_9_10_cb_group, true);
@@ -241,7 +240,7 @@ void test_case_1(){
     chain_criticalities5.push_back(0);
     chain8_9_10->setPriorities(chain_criticalities5);
 
-    auto chain11_12_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain11_12_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain11_12 = std::make_shared<Chain>(5);
     auto c5_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 120000}, 5, 1, 1, "pointcloud_map", "", "c5_cb1", 1000, chain11_12_cb_group);
     auto c5_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, "pointcloud_map_loader", "c5_cb1", "c5_cb2", 65536, chain11_12_cb_group);
@@ -267,8 +266,8 @@ void test_case_1(){
     chain_criticalities6.push_back(0);
     chain11_12->setPriorities(chain_criticalities6);
 
-    auto chain13_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
-    //auto  chain13_cb_group = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    auto chain13_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
+    //auto  chain13_cb_group = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain13 = std::make_shared<Chain>(6);
     auto c6_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 25000}, 6, 1, 19, "euclidean_cluster_settings", "", "c6_cb1", 1000, chain13_cb_group);
@@ -291,7 +290,7 @@ void test_case_1(){
 
 
 /*test with adding additional BE chains*/
-    // auto chain14_15_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    // auto chain14_15_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     // auto chain14_15 = std::make_shared<Chain>(7);
     // auto c7_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 5, 1, 1, "adversarial_pointcloud_map", "", "c7_cb1", 128000, chain14_15_cb_group);
     // auto c7_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, "adversarial_pointcloud_map_loader", "c7_cb1", "c7_cb2", 128000, chain14_15_cb_group);
@@ -327,6 +326,13 @@ void test_case_1(){
     ex.add_chain(chain8_9_10);
     ex.add_chain(chain11_12);
     ex.add_chain(chain13);
+    // ex.add_chain_cb_group(chain1_2_cb_group, chain1_2);
+    // ex.add_chain_cb_group(chain3_4_cb_group, chain3_4); 
+    // ex.add_chain_cb_group(chain5_6_cb_group, chain5_6);
+    // ex.add_chain_cb_group(chain7_cb_group, chain7);
+    // ex.add_chain_cb_group(chain8_9_10_cb_group, chain8_9_10);
+    // ex.add_chain_cb_group(chain11_12_cb_group, chain11_12);
+    // ex.add_chain_cb_group(chain13_cb_group, chain13);
     //ex.add_chain(chain14_15);
 
     ex.set_callback_priorities();
@@ -349,7 +355,7 @@ void test_case_1(){
     ex.pause();
     //std::this_thread::sleep_for(std::chrono::seconds(10));
     //ex.start();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     ex.remove_all_callbacks_from_all_threads();
 
@@ -380,7 +386,7 @@ void test_case_2(){
    int n_cpus = 3;
     executor ex(n_cpus);
 
-    auto chain1_2_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain1_2_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain1_2 = std::make_shared<Chain>(0);
     auto c0_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 0, 1, 22, "front_lidar_driver", "", "c0_cb1", 1000, chain1_2_cb_group);
@@ -419,7 +425,7 @@ void test_case_2(){
     chain_criticalities.push_back(2);
     chain_criticalities.push_back(0);
     chain1_2->setPriorities(chain_criticalities);
-    auto chain3_4_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain3_4_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain3_4 = std::make_shared<Chain>(1);
     auto c1_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 1, 1, 32, 0, "behavior_planner_timer", "", "c1_cb1", 1000, chain3_4_cb_group, true);
@@ -447,7 +453,7 @@ void test_case_2(){
     chain_criticalities2.push_back(0);
     chain3_4->setPriorities(chain_criticalities2);
 
-    auto chain5_6_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain5_6_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain5_6 = std::make_shared<Chain>(2);
     auto c2_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 60000}, 2, 1, 6, 0, "visualizer", "", "c2_cb1", 1000, chain5_6_cb_group, true);
     auto c2_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 2, 2, 8, 0, "lanelet_2_global_planner", "c2_cb1", "c2_cb2", 65536, chain5_6_cb_group);
@@ -470,7 +476,7 @@ void test_case_2(){
     chain_criticalities3.push_back(0);
     chain5_6->setPriorities(chain_criticalities3);
 
-    auto chain7_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain7_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain7 = std::make_shared<Chain>(3);
     auto c3_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 3, 1, 23, "rear_lidar_driver", "", "c3_cb1", 1000, chain7_cb_group);
     auto c3_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 3, 2, 25, "points_transformer_rear", "c3_cb1", "c3_cb2", 65536, chain7_cb_group);
@@ -488,7 +494,7 @@ void test_case_2(){
     chain_criticalities4.push_back(1);
     chain7->setPriorities(chain_criticalities4);
 
-    auto chain8_9_10_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain8_9_10_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain8_9_10 = std::make_shared<Chain>(4);
     auto c4_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 100000}, 4, 1, 9, "lanelet_2_map", "", "c4_cb1", 1000, chain8_9_10_cb_group);
     auto c4_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 4, 2, 11, 0, "lanelet_2_map_loader", "c4_cb1", "c4_cb2", 65536, chain8_9_10_cb_group, true);
@@ -522,7 +528,7 @@ void test_case_2(){
     chain_criticalities5.push_back(0);
     chain8_9_10->setPriorities(chain_criticalities5);
 
-    auto chain11_12_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain11_12_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain11_12 = std::make_shared<Chain>(5);
     auto c5_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 120000}, 5, 1, 1, "pointcloud_map", "", "c5_cb1", 1000, chain11_12_cb_group);
     auto c5_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, "pointcloud_map_loader", "c5_cb1", "c5_cb2", 65536, chain11_12_cb_group);
@@ -548,8 +554,8 @@ void test_case_2(){
     chain_criticalities6.push_back(0);
     chain11_12->setPriorities(chain_criticalities6);
 
-    auto chain13_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
-    //auto  chain13_cb_group = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    auto chain13_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
+    //auto  chain13_cb_group = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     auto chain13 = std::make_shared<Chain>(6);
     auto c6_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 25000}, 6, 1, 19, "euclidean_cluster_settings", "", "c6_cb1", 1000, chain13_cb_group);
@@ -572,7 +578,7 @@ void test_case_2(){
 
 
 /*test with adding additional BE chains*/
-    auto chain14_15_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::Reentrant);
+    auto chain14_15_cb_group = std::make_shared<rclcpp::CallbackGroup>(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto chain14_15 = std::make_shared<Chain>(7);
     auto c7_cb1 = std::make_shared<Callback>(CallbackType::TIMER, timeval{0, 200000}, 5, 1, 1, "adversarial_pointcloud_map", "", "c7_cb1", 128000, chain14_15_cb_group);
     auto c7_cb2 = std::make_shared<Callback>(CallbackType::SUBSCRIPTION, timeval{0, 0}, 5, 2, 3, "adversarial_pointcloud_map_loader", "c7_cb1", "c7_cb2", 128000, chain14_15_cb_group);
@@ -607,6 +613,14 @@ void test_case_2(){
     ex.add_chain(chain11_12);
     ex.add_chain(chain13);
     ex.add_chain(chain14_15);
+    // ex.add_chain_cb_group(chain1_2_cb_group, chain1_2);
+    // ex.add_chain_cb_group(chain3_4_cb_group, chain3_4); 
+    // ex.add_chain_cb_group(chain5_6_cb_group, chain5_6);
+    // ex.add_chain_cb_group(chain7_cb_group, chain7);
+    // ex.add_chain_cb_group(chain8_9_10_cb_group, chain8_9_10);
+    // ex.add_chain_cb_group(chain11_12_cb_group, chain11_12);
+    // ex.add_chain_cb_group(chain13_cb_group, chain13);
+    // ex.add_chain_cb_group(chain14_15_cb_group, chain14_15);
 
     ex.set_callback_priorities();
     std::cout << std::endl

@@ -7,14 +7,13 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic -Wno-reorder)
+  add_compile_options(-Wall -Wextra -Wpedantic -Wno-reorder -g -O3)
 endif()
 
 if(${CMAKE_CXX_FLAGS})
   message(WARNING "CMAKE_CXX_FLAGS is set to ${CMAKE_CXX_FLAGS}")
   add_compile_options(${CMAKE_CXX_FLAGS})
 endif()
-
 if(${PICAS})
   add_compile_options(-DPICAS)
 endif()

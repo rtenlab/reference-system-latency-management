@@ -1,7 +1,6 @@
 #ifndef EXECUTOR_CPP
 #define EXECUTOR_CPP
 #include <executor.hpp>
-
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE /* See feature_test_macros(7) */
 #endif
@@ -25,7 +24,22 @@ void executor::assign_cv(std::shared_ptr<std::condition_variable> cv, std::share
     this->mtx_ptr = mtx;
 }
 
+void executor::add_chain_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group, std::shared_ptr<Chain> chain)
+{
+    // callback_groups.push_back(std::make_pair<int, std::shared_ptr<rclcpp::CallbackGroup>>(chain->getChainID(), group));
+    for (auto &cb : chain->getCallbacks())
+    {
+        this->add_callback_group(group, cb->get_node_base_interface());
+    }
+}
 
+void executor::add_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group, std::shared_ptr<Callback> node, int id)
+{
+    // callback_groups.push_back(std::make_pair<int, std::shared_ptr<rclcpp::CallbackGroup>>(id, group));
+    this->add_callback_group(group, node->get_node_base_interface());
+    // node->set_callback_group(group);
+    // node->set_callback_group_id(id);
+}
 bool CompareCallback::operator()(const std::pair<std::shared_ptr<Callback>, int> &a, const std::pair<std::shared_ptr<Callback>, int> &b) const
 {
     // Compare by type: TIMER has higher priority than SUBSCRIPTION
@@ -64,7 +78,9 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
 
     for (auto &chain : chains) // for each chain
     {
-        if (chain->get_num_branches() == 0) 
+        auto root_cb = chain->getCallbacks().at(0);
+        auto last_nonlinear_branch_id = -1;
+        if (chain->get_num_branches() == 0)
         { // if linear
             if (chain->getBranchPriority(0) == 0)
             { // if BE
@@ -73,13 +89,13 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                 for (auto &callback : chain->getCallbacks())
                 {
                     be_chain->addCallback(callback, false);
-                    callback->setChain(chain);
-                    callback->setChainID(be_chain_id); 
-                    callback->setPlaceInChain(place_in_chain++); 
-
+                    callback->setChain(be_chain); // changed: check if broken
+                    callback->setChainID(be_chain_id);
+                    callback->setPlaceInChain(place_in_chain++);
+                    callback->root_cb = root_cb;
                 }
                 be_chain->setPeriod(chain->getPeriod());
-                be_chain->setDeadline(chain->getPeriod());
+                be_chain->setDeadline(chain->getDeadline());
                 be_chain->setBranchPriority(0, 0);
                 be_chain->setLatencyTarget({0, 0}, 0, false);
                 sorted_be_chains.push_back(be_chain);
@@ -88,14 +104,14 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
             else
             { // if linear and RT
                 int place_in_chain = 0;
-                std::shared_ptr<Chain> rt_chain = std::make_shared<Chain>(rt_chain_id); 
+                std::shared_ptr<Chain> rt_chain = std::make_shared<Chain>(rt_chain_id);
                 for (auto &callback : chain->getCallbacks())
                 {
                     rt_chain->addCallback(callback, false);
-                    callback->setChain(chain);
-                    callback->setChainID(rt_chain_id);   
-                    callback->setPlaceInChain(place_in_chain++);                 
-
+                    callback->setChain(rt_chain);
+                    callback->setChainID(rt_chain_id);
+                    callback->setPlaceInChain(place_in_chain++);
+                    callback->root_cb = root_cb;
                 }
                 rt_chain->setPeriod(chain->getPeriod());
                 rt_chain->setDeadline(chain->getLatencyTargets()->at(0));
@@ -107,32 +123,58 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
         }
         else
         { // if nonlinear
+            // collect root of the chain
+            // std::shared_ptr<Callback> root_cb = chain->getFirstCallback();
+            std::shared_ptr<Callback> root_cb = chain->getCallbacks().at(0);
+            std::shared_ptr<Callback> branch_root_cb = nullptr;
+
+            // the root of the original chain is needed to be able to properly model the system and performa analysis
             for (int branch_id = 0; branch_id <= chain->get_num_branches(); branch_id++) // for each branch id
             {
                 if (chain->getBranchPriority(branch_id) == 0) // if BE chain
                 {
                     std::shared_ptr<Chain> be_chain = std::make_shared<Chain>(be_chain_id); // make new chain for this analysis
                     int place_in_chain = 0;
+                    // at this point in the code, we can assume that we have found a nonlinear Best Effort chain
                     for (auto &callback : chain->getCallbacks()) // for each callback in the chain  that we are testing
                     {
+
                         if (callback->get_branch_id() == branch_id && place_in_chain == 0) // check to see if the candidate callback for this chain matches the branch we are evaluating
-                        {
-                            // if the callback branch matches the branch we are evaluating, and it is 
+                        {                                                                  // if it is the first callback of in the chain
+                            // if the callback branch matches the branch we are evaluating, and it is
                             // Note: Callback is derived from rclcpp::Node which cannot be copied (copy constructor not allowed).
                             //       So, Keep the original callback instance and add its pointer to the new chain
                             // std::shared_ptr<Callback> new_callback = std::make_shared<Callback>(CallbackType::TIMER, chain->getFirstCallback()->getPeriod(), be_chain_id, place_in_chain++, 0, callback->getName(), callback->getNumCruncherLimit(), callback->getUUID());
-                            
-                            callback->setPeriod(chain->getFirstCallback()->getPeriod()); 
+                            // branch_cb = callback;
+
+                            callback->setPeriod(chain->getFirstCallback()->getPeriod());
                             callback->setChainID(be_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
                             callback->setPriority(0);
                             callback->setExecutionTime(callback->getExecutionTime());
+
+                            if (callback->is_non_linear())
+                            {
+                                branch_root_cb = callback;
+                                last_nonlinear_branch_id = branch_id;
+                            }
+                            else if (last_nonlinear_branch_id != branch_id)
+                            {
+                                // see whether the callback is the last callback in the chain
+                                if (callback->end_callback == true)
+                                {
+                                    callback->branch_root_cb = branch_root_cb;
+                                }
+                            }
                             callback->set_branch_id(0);
-                            callback->set_nonlinear(false);
+
+                            // callback->set_nonlinear(false); // changed -- do testing
                             be_chain->addCallback(callback, false);
                             callback->setChain(be_chain);
+                            callback->root_cb = root_cb;
+                            // callback->branch_root_cb
                             be_chain->setPeriod(chain->getPeriod());
-                            be_chain->setDeadline(chain->getPeriod());
+                            be_chain->setDeadline(chain->getDeadline());
                             be_chain->setBranchPriority(0, 0);
                             be_chain->setLatencyTarget({0, 0}, 0, false);
                         }
@@ -145,20 +187,35 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                             callback->setPlaceInChain(place_in_chain++);
                             callback->setPriority(0);
                             callback->setExecutionTime(callback->getExecutionTime());
+                            if (callback->is_non_linear()) // if this is a branch root callback log it
+                            {
+                                branch_root_cb = callback;
+                                last_nonlinear_branch_id = branch_id;
+                            }
+                            else if (last_nonlinear_branch_id != branch_id)
+                            { // if this is not a branch root callback, put in the branch root callback (may be nullptr if not on a branch)
+                                if (callback->end_callback == true)
+                                {
+                                    callback->branch_root_cb = branch_root_cb;
+                                }
+                            }
                             callback->set_branch_id(0);
-                            callback->set_nonlinear(false);
+                            callback->root_cb = root_cb; // all callbacks will have access to this root callback pointer for similicity
+                            // callback->branch_root_cb = branch_root_cb;
+                            // callback->set_nonlinear(false); // changed -- do testing
                             be_chain->addCallback(callback, false);
                             callback->setChain(be_chain);
                             be_chain->setPeriod(chain->getPeriod());
-                            be_chain->setDeadline(chain->getPeriod());
+                            be_chain->setDeadline(chain->getDeadline());
                             be_chain->setBranchPriority(0, 0);
                             be_chain->setLatencyTarget({0, 0}, 0, false);
+                            callback->root_cb = root_cb;
                         }
                     }
                     be_chain_id++;
                     sorted_be_chains.push_back(be_chain);
                 }
-                else
+                else // if we are here, we have found a nonlinear rt branch of a chain
                 {
                     int place_in_chain = 0;
 
@@ -172,8 +229,18 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                             callback->setChainID(rt_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
                             callback->setExecutionTime(callback->getExecutionTime());
+                            // callback->set_nonlinear(false);
+                            if (callback->is_non_linear())
+                            {
+                                branch_root_cb = callback;
+                                last_nonlinear_branch_id = branch_id;
+                            }
+                            else if (last_nonlinear_branch_id != branch_id && callback->end_callback == true)
+                            { // if this is not a branch root callback, put in the branch root callback (may be nullptr if branch == 0)
+                                callback->branch_root_cb = branch_root_cb;
+                            }
                             callback->set_branch_id(0);
-                            callback->set_nonlinear(false);
+                            callback->root_cb = root_cb;
                             rt_chain->addCallback(callback, false);
                             callback->setChain(rt_chain);
                             rt_chain->setPeriod(chain->getPeriod());
@@ -189,8 +256,20 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
                             callback->setChainID(rt_chain_id);
                             callback->setPlaceInChain(place_in_chain++);
                             callback->setExecutionTime(callback->getExecutionTime());
+                            if (callback->is_non_linear())
+                            {
+                                branch_root_cb = callback;
+                                last_nonlinear_branch_id = branch_id;
+                            }
+                            else if (last_nonlinear_branch_id != branch_id && callback->end_callback == true)
+                            { // if this is not a branch root callback, put in the branch root callback (may be nullptr if branch == 0)
+                                callback->branch_root_cb = branch_root_cb;
+                            }
                             callback->set_branch_id(0);
-                            callback->set_nonlinear(false);
+
+
+                            callback->root_cb = root_cb;
+                            // callback->set_nonlinear(false);
                             rt_chain->addCallback(callback, false);
                             callback->setChain(rt_chain);
                             rt_chain->setPeriod(chain->getPeriod());
@@ -218,11 +297,11 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
 void executor::set_callback_priorities()
 {
 
-// if not defined
-// #if !defined(LATENCY_MGMT) && !defined(PICAS_THREAD_AFFINITY)
-//     std::cout << "Latency management and thread affinity turned off -- skipping callback priority assignment" << std::endl;
-//     return;
-// #endif
+    // if not defined
+    // #if !defined(LATENCY_MGMT) && !defined(PICAS_THREAD_AFFINITY)
+    //     std::cout << "Latency management and thread affinity turned off -- skipping callback priority assignment" << std::endl;
+    //     return;
+    // #endif
 
 #if defined(LATENCY_MGMT)
     int priority = 1;
@@ -453,7 +532,7 @@ void executor::print_threads()
 void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecutor::spin()
 {
     number_of_threads_ = num_threads;
-    //spinning.exchange(true);
+    // spinning.exchange(true);
     spinning.store(true);
     update_active_threads(0); // Force threads to wait until start() is called
 
@@ -465,7 +544,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
     int num_rt_threads = num_threads;
 #ifdef LATENCY_MGMT
     int num_be_threads = num_threads;
-    //int num_be_threads = 0;
+    // int num_be_threads = 0;
 #else
     int num_be_threads = 0;
 #endif
@@ -493,7 +572,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             std::cout << "Creating RT Thread No. " << num_rt_threads << std::endl;
             thread->set_policy(SCHED_DEADLINE);
             // thread->set_priority(0);
-            //thread->set_budget(THREAD_PERIOD);
+            // thread->set_budget(THREAD_PERIOD);
             thread->set_budget(THREAD_PERIOD - 10240);
             cpu_set_t cpuSet;
             CPU_ZERO(&cpuSet);
@@ -503,7 +582,7 @@ void executor::make_threads(int num_threads) // equivalent to MultiThreadedExecu
             struct sched_attr attr;
             attr.size = sizeof(attr);
             attr.sched_policy = SCHED_DEADLINE;
-            //attr.sched_runtime = THREAD_PERIOD;  
+            // attr.sched_runtime = THREAD_PERIOD;
             attr.sched_runtime = THREAD_PERIOD - 10240;
             attr.sched_period = THREAD_PERIOD;   // 200ms period
             attr.sched_deadline = THREAD_PERIOD; // 200ms deadline
@@ -1242,7 +1321,7 @@ void executor::update_waitset()
 */
 // void executor::add_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group)
 // {
-    
+
 //     this->add_callback_group(group, true);
 // }
 
@@ -1260,7 +1339,8 @@ void executor::add_chain(std::shared_ptr<Chain> chain)
             this->add_node(callback);
         }
     }
-    else{
+    else
+    {
         for (auto &callback : chain->getCallbacks())
         {
             callback->exec = this;

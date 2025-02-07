@@ -38,7 +38,7 @@ void MPCController::chain_test()
     threadclasses[0]->set_utilization(compute_chain_utilization(chain0));
     threadclasses[1]->set_utilization(compute_chain_utilization(chain1));
     exec->enable_callback_priority();
-        exec->start();
+    exec->start();
 
     exec->apply_callback_to_thread_assignment();
 }
@@ -113,16 +113,16 @@ void MPCController::verify_starvation_freedom(std::shared_ptr<threadclass> be_tc
         if (be_response_times[i].tv_sec * 1e6 + be_response_times[i].tv_usec > 20e7 - 100 || be_response_times[i].tv_sec * 1e6 + be_response_times[i].tv_usec <= 0) // don't compare with 20e7; double is inaccurate
         {
             std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " on threadclass: " << be_tc->id << " is not starvation free" << std::endl;
-            std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " WCRT: " << be_response_times[i].tv_sec*1000000 +be_response_times[i].tv_usec << std::endl;
+            std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " WCRT: " << be_response_times[i].tv_sec * 1000000 + be_response_times[i].tv_usec << std::endl;
 
-            //std::cout << "BE Chain " << i << " is not starvation free" << std::endl;
+            // std::cout << "BE Chain " << i << " is not starvation free" << std::endl;
         }
         else
         {
             std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " on threadclass: " << be_tc->id << " is starvation free" << std::endl;
-            std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " WCRT: " << be_response_times[i].tv_sec*1000000 +be_response_times[i].tv_usec << std::endl;
-            //std::cout << "BE Chain " << i << " is starvation free" << std::endl;
-            //std::cout << "Estimated Response Time for Chain " << i << ": " << be_response_times[i].tv_sec << "s " << be_response_times[i].tv_usec << "us" << std::endl;
+            std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " WCRT: " << be_response_times[i].tv_sec * 1000000 + be_response_times[i].tv_usec << std::endl;
+            // std::cout << "BE Chain " << i << " is starvation free" << std::endl;
+            // std::cout << "Estimated Response Time for Chain " << i << ": " << be_response_times[i].tv_sec << "s " << be_response_times[i].tv_usec << "us" << std::endl;
         }
     }
     // for (auto &rt : chain_response_times)
@@ -148,6 +148,7 @@ void MPCController::run()
     this->create_threadclass();
     // gettimeofday(&end_time, NULL);
     std::cout << "Threadclass creation time: " << (end_time.tv_sec - start_time.tv_sec) * 1e6 + (end_time.tv_usec - start_time.tv_usec) << std::endl;
+    //this->exec->print_chains_and_callbacks();
     bool first_run = true;
     do
     {
@@ -188,7 +189,7 @@ void MPCController::run()
                     }
                     else if (first_run)
                     {
-                        //realloc = true;
+                        // realloc = true;
                         realloc = reduce_rt_budget(tc, &analysis_count, 0) ? true : false;
                     }
                 }
@@ -206,14 +207,14 @@ void MPCController::run()
         timespec_to_timeval(&end, &end_time);
         timersub(&end_time, &start_time, &end_time);
 
-        std::cout << "Controller activation time: " << end_time.tv_sec * 1e6 +end_time.tv_usec << " us. Number of times analysis was performed: " << analysis_count << std::endl;
+        std::cout << "Controller activation time: " << end_time.tv_sec * 1e6 + end_time.tv_usec << " us. Number of times analysis was performed: " << analysis_count << std::endl;
 
         // IMPORTANT: Apply callback-to-thread assignment to rclcpp
         if (first_run)
         {
             exec->enable_callback_priority();
             exec->start();
-            //exec->apply_callback_to_thread_assignment();
+            // exec->apply_callback_to_thread_assignment();
             first_run = false;
         }
         else if (realloc)
@@ -337,7 +338,180 @@ void MPCController::update_tc_utilization(std::shared_ptr<threadclass> tc)
     tc->utilization = total_utilization / (tc->total_budget / THREAD_PERIOD * tc->threads.size());
 }
 
-std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget )
+// create template to convert all types (int, double, long, etc) into timevals
+template <typename T>
+struct timeval convert_to_timeval(T value)
+{
+    struct timeval tv;
+    tv.tv_sec = static_cast<int>(value) / 1000000;
+    tv.tv_usec = static_cast<int>(value) % 1000000;
+    return tv;
+}
+
+
+struct timeval MPCController::do_partial_analysis(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget, std::shared_ptr<Chain> root_chain, std::shared_ptr<Callback> nl_cb_ptr)
+{
+    double M = tg->threads.size();
+    auto k = root_chain->getChainID(); // we want to do a partial analysis on the root chain
+    double delta = 1;
+    auto E_k = 1;
+    auto MSG_DELAY = 0, QUEUE_DELAY = 0;
+    auto response_time = 0.0;
+    bool nonlinear_cb = true;
+    for (auto &callback : root_chain->getCallbacks())
+    {
+        if (callback->getPlaceInChain() != root_chain->getNumCallbacks()) // this assumes linear chains only, no branches
+        {
+            auto ex_time = callback->getExecutionTime();
+            E_k += ex_time.tv_sec * 1e6 + ex_time.tv_usec + MSG_DELAY + QUEUE_DELAY;
+        }
+    }
+    auto chain = root_chain;
+    while (true && this->exec->is_running())
+    {
+        double W = 0.0;
+
+        // initialize W, intf
+        double intf = 0.0;
+        // interference from all interfering chains
+        // for each interfering chain in the same chainset
+        for (auto &interf_chain : chainset)
+        {
+            // if the interfering chain is not the same as the current chain
+            if (interf_chain != chain)
+            {
+                // calculate the interference
+                // T is the period of the interfering chain
+                auto T = interf_chain->getPeriod().tv_sec * 1e6 + interf_chain->getPeriod().tv_usec;
+                // D is the deadline of the interfering chain
+                auto D = interf_chain->getDeadline().tv_sec * 1e6 + interf_chain->getDeadline().tv_usec;
+                // C is the total execution time of all callbacks in the interfering chain
+                auto C = 0;
+                // for all callbacks in the interfering chain
+                for (auto &callback : interf_chain->getCallbacks())
+                {
+                    auto ex_time = callback->getExecutionTime();
+                    C += ex_time.tv_sec * 1e6 + ex_time.tv_usec + MSG_DELAY + QUEUE_DELAY;
+                }
+                // if the interfering chain is a RT chain
+                if (tg->rt_threadclass)
+                {
+                    // assuming linear chains only: if the interfering chain has a higher priority than the current chain
+                    if (interf_chain->getBranchPriority(0) > chain->getBranchPriority(0))
+                    {
+                        // calculate the interference
+                        if (D - C <= 0)
+                        {
+                            std::cerr << "Interference calculation error: D-C <= 0" << std::endl;
+                        }
+                        intf += interference(delta, D - C, T, C);
+                    }
+                }
+                else // if the interfering chain is a BE chain
+                {
+                    if (D - C <= 0)
+                    {
+                        std::cerr << "Interference calculation error: D-C <= 0" << std::endl;
+                    }
+                    // calculate the interference
+                    intf += interference(delta, D - C, T, C);
+                }
+            }
+        }
+        // calculate the response time
+        // if the threadclass is a BE threadclass
+        if (!tg->rt_threadclass)
+        {
+            // W = M * E_k + intf
+            W = M * double(E_k) + intf;
+        }
+        else
+        {
+            // if the threadclass is a RT threadclass
+            // calculate the B term
+
+            std::vector<std::shared_ptr<Chain>> exclusive_chainset;
+            for (auto &candidate_chain : chainset)
+            {
+                if (candidate_chain != chain)
+                {
+                    exclusive_chainset.push_back(candidate_chain);
+                }
+            }
+            // Perform the MLP calculation
+            double B = MLP(M, exclusive_chainset, chain->getBranchPriority(0), delta);
+            // W = M * E_k + intf + B
+            W = M * double(E_k) + intf + B;
+        }
+        auto sbfd = std::ceil(sbf(delta, budget, THREAD_PERIOD_US));
+        // if W is negative, increment delta
+        if (W < 0)
+        {
+            delta++;
+        }
+        // else if (W < M * delta)
+        else if (W < M * sbfd) // change for period and budget
+        {
+            // if W is less than M * delta, set the response time and delta
+            // x is the execution time of the last callback in the chain - 1
+            auto x = (double)chain->getCallbacks()[chain->getNumCallbacks() - 1]->getExecutionTime().tv_sec * 1e6 + chain->getCallbacks()[chain->getNumCallbacks() - 1]->getExecutionTime().tv_usec - 1 + MSG_DELAY + QUEUE_DELAY;
+            // the response times are calculated as the sum of the execution time of the last callback in the chain and the pseudo-inverse of the SBF function
+            response_time = delta + pseudo_inv_sbf(x, budget, THREAD_PERIOD_US); // units are in microseconds, not nanoseconds
+            // if the chain has a callback that is a branch root, then let's store the upper bound on RT for the root chain on that root callback
+            // std::cout << "Setting Chain: " << chain->getChainID() << " Response Time: " << response_time << std::endl;
+            // if (nonlinear_cb)
+            // {
+            //     std::cout << "Setting Root time for callback: " << nl_cb_ptr->getName() << " to: " << response_time << std::endl;
+            //     std::cout << "Full chain response time: " << response_time << std::endl;
+            //     //std::cout << "Trunk of chain execution time: " << trunk_ex_time << std::endl;
+            //     std::cout << "Callback Place in chain: " << nl_cb_ptr->getPlaceInChain() << std::endl;
+            // }
+            if (nonlinear_cb) // k is chain id, nonlinear_id is a callback id
+            {
+                // the root time will be the response time minus the execution time of the callbacks after the branch root
+                auto root_time = convert_to_timeval(response_time);
+                nl_cb_ptr->root_rt = root_time;
+                //nl_cb_ptr->root_rt.tv_sec = root_time / 1e6;
+                //nl_cb_ptr->root_rt.tv_usec = root_time - nl_cb_ptr->root_rt.tv_sec * 1e6;
+            }
+            // update delta value
+            //delta_values[k] = delta;
+            k++;
+            break;
+        }
+        else if (delta > (double)(10000000))
+        { // higher limit
+            // not schedulable
+            response_time = 20e6;
+            //delta_values[k] = delta;
+
+            if (nonlinear_cb)
+            {
+                // the root time will be the response time minus the execution time of the callbacks after the branch root
+                struct timeval root_time = convert_to_timeval(response_time);
+                nl_cb_ptr->root_rt = root_time;
+                // nl_cb_ptr->root_rt.tv_sec = root_time / 1e6;
+                // nl_cb_ptr->root_rt.tv_usec = root_time - nl_cb_ptr->root_rt.tv_sec * 1e6;
+            }
+            k++;
+            break;
+        }
+        else
+        {
+            auto delta_prev = delta;
+            // if W is greater than M * delta, increment delta
+            delta = 1 + std::floor(W / M);
+            if (delta <= delta_prev)
+            {
+                // delta = delta_prev + 1;
+                delta = delta_prev + 1;
+                // delta += std::floor(W/M);
+            }
+        }
+    }
+    return convert_to_timeval(response_time);
+}
+std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget)
 {
     // M is the number of threads in the threadclass * the total budget (per thread)
     // double M = tg->threads.size() * (double)tg->total_budget / 10000;
@@ -368,27 +542,97 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
         }
         goto out;
     }
-    if(tg->rt_threadclass){
-        MSG_DELAY = 600; // us -- profiling value
-        //QUEUE_DELAY = 500; //us
+    if (tg->rt_threadclass)
+    {
+        // MSG_DELAY = 600; // us -- profiling value
+        // QUEUE_DELAY = 500; //us
     }
     // for each chain assigned to the chainset
     for (auto &chain : chainset)
     {
+        bool nonlinear_cb = false;
+        std::shared_ptr<Callback> nl_cb_ptr = nullptr;//chain->getFirstCallback();
+        int nonlinear_id = 0;
+        auto trunk_ex_time = 0;
+        auto e_top = 0;
         // Initialize Delta and E_k
         double delta = 1;
         auto E_k = 1;
-        // Calculate the total execution time of all callbacks in the chain
+
+        // check to see whether the chain has a nonlinear callback this should be checked for each chain
         for (auto &callback : chain->getCallbacks())
         {
             if (callback->getPlaceInChain() != chain->getNumCallbacks()) // this assumes linear chains only, no branches
             {
+                //std::cout << "Callback: " << callback->getName() << " Is nonLinear: " << callback->is_non_linear() << std::endl;
+                // if this is a branch root callback
+                if (callback->is_non_linear())
+                {
+                    nonlinear_cb = true;
+                    nonlinear_id = callback->getPlaceInChain();
+                    nl_cb_ptr = callback;
+                    //std::cout << "Nonlinear callback found: " << callback->getName() << std::endl;
+                    //std::cout << "Nonlinear ID: " << nonlinear_id << std::endl;
+                }
+
                 // the state-wise WCET time of the callback
                 // auto ex_time = callback->getExecutionTime(exec->get_state());
                 auto ex_time = callback->getExecutionTime();
                 // Chain K's execution time is the sum of all callback execution times (except the last callback)
                 E_k += ex_time.tv_sec * 1e6 + ex_time.tv_usec + MSG_DELAY + QUEUE_DELAY;
             }
+        }
+
+        // if we detected a nonlinear callback in the chain, and we are not performing a partial analysis
+        if (nonlinear_cb)
+        {
+            // we need to make a fake chain for this partial analysis and inject it into the chainset
+            // we also need to make a fake chainset for the partial analysis
+            std::vector<std::shared_ptr<Chain>> partial_chainset;
+            for (auto &candidate_chain : chainset)
+            {
+                if (candidate_chain != chain)
+                {
+                    partial_chainset.push_back(candidate_chain);
+                }
+            }
+            // now we need to take the current chain, and make a fake chain that only includes the root of the chain, up until the nonlinear callback
+            auto partial_chain = std::make_shared<Chain>(chain->getChainID());
+            for (auto &callback : chain->getCallbacks())
+            {
+                if (callback->getPlaceInChain() <= nonlinear_id)
+                {
+                    partial_chain->addCallback(callback, false);
+                }
+            }
+            partial_chain->setPeriod(chain->getPeriod());
+            partial_chain->setDeadline(chain->getDeadline());
+            partial_chain->setBranchPriority(chain->getBranchPriority(0), 0);
+            partial_chain->setLatencyTarget({0, 0}, 0, false);
+            // set branch rt and other things to avoid segfault
+            std::vector<int> chain_criticalities;
+            chain_criticalities.push_back(0);
+            partial_chain->setPriorities(chain_criticalities);
+            partial_chainset.push_back(partial_chain);
+
+            //std::cout << "Performing partial analysis on chain: " << chain->getChainID() << " with root callback: " << nl_cb_ptr->getName() << std::endl;
+            struct timeval root_time = do_partial_analysis(partial_chainset, tg, budget, partial_chain, nl_cb_ptr);
+            //std::cout << "Partial analysis resulted in a partial chain response time of: " << root_time.tv_sec * 1e6 + root_time.tv_usec << std::endl;
+            nl_cb_ptr->root_rt = root_time;
+            // for (auto &chain : partial_chainset){
+            //     chain->printChain();
+            //     chain->printCallbacks();
+            // }
+            // now we need to perform the partial analysis on the chain
+            // // if the chain is nonlinear, we need to find the execution time of the trunk
+            // for (auto &callback : chain->getCallbacks())
+            // {
+            //     if (callback->getPlaceInChain() > nonlinear_id)
+            //     {
+            //         auto ex_time = callback->getExecutionTime();
+            //         trunk_ex_time += ex_time.tv_sec * 1e6 + ex_time.tv_usec + MSG_DELAY + QUEUE_DELAY;
+            //     }
+            // }
         }
 
         // Calculate the response time for the chain
@@ -426,11 +670,19 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                         if (interf_chain->getBranchPriority(0) > chain->getBranchPriority(0))
                         {
                             // calculate the interference
+                            if (D - C <= 0)
+                            {
+                                std::cerr << "Interference calculation error: D-C <= 0" << std::endl;
+                            }
                             intf += interference(delta, D - C, T, C);
                         }
                     }
                     else // if the interfering chain is a BE chain
                     {
+                        if (D - C <= 0)
+                        {
+                            std::cerr << "Interference calculation error: D-C <= 0" << std::endl;
+                        }
                         // calculate the interference
                         intf += interference(delta, D - C, T, C);
                     }
@@ -475,16 +727,55 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                 auto x = (double)chain->getCallbacks()[chain->getNumCallbacks() - 1]->getExecutionTime().tv_sec * 1e6 + chain->getCallbacks()[chain->getNumCallbacks() - 1]->getExecutionTime().tv_usec - 1 + MSG_DELAY + QUEUE_DELAY;
                 // the response times are calculated as the sum of the execution time of the last callback in the chain and the pseudo-inverse of the SBF function
                 response_times[k] = delta + pseudo_inv_sbf(x, budget, THREAD_PERIOD_US); // units are in microseconds, not nanoseconds
+                // if the chain has a callback that is a branch root, then let's store the upper bound on RT for the root chain on that root callback
+                // std::cout << "Setting Chain: " << chain->getChainID() << " Response Time: " << response_times[k] << std::endl;
+                // if (nonlinear_cb)
+                // {
+                //     std::cout << "Setting Root time for callback: " << nl_cb_ptr->getName() << " to: " << response_times[k] - trunk_ex_time << std::endl;
+                //     std::cout << "Full chain response time: " << response_times[k] << std::endl;
+                //     std::cout << "Trunk of chain execution time: " << trunk_ex_time << std::endl;
+                //     std::cout << "Callback Place in chain: " << nl_cb_ptr->getPlaceInChain() << " nonlinear cb id: " << nonlinear_id << std::endl;
+                // }
+                // if (nonlinear_cb) // k is chain id, nonlinear_id is a callback id
+                // {
+                //     // the root time will be the response time minus the execution time of the callbacks after the branch root
+                //     auto root_time = response_times[k] - trunk_ex_time;
+                //     /*for(auto &callback : chain->getCallbacks()){
+                //         if(callback->is_non_linear()){
+                //             callback->root_rt.tv_sec = root_time / 1e6;
+                //             callback->root_rt.tv_usec = root_time - callback->root_rt.tv_sec * 1e6;
+
+                //         }
+                //     }
+                //     */
+                //     nl_cb_ptr->root_rt.tv_sec = root_time / 1e6;
+                //     nl_cb_ptr->root_rt.tv_usec = root_time - nl_cb_ptr->root_rt.tv_sec * 1e6;
+                // }
                 // update delta value
                 delta_values[k] = delta;
                 k++;
                 break;
             }
-            else if (delta > (double)(8000000)) 
-            {                                   // higher limit
+            else if (delta > (double)(10000000))
+            { // higher limit
                 // not schedulable
                 response_times[k] = 20e6;
                 delta_values[k] = delta;
+
+                // if (nonlinear_cb)
+                // {
+                //     // the root time will be the response time minus the execution time of the callbacks after the branch root
+                //     auto root_time = response_times[k] - trunk_ex_time;
+                //     nl_cb_ptr->root_rt.tv_sec = root_time / 1e6;
+                //     nl_cb_ptr->root_rt.tv_usec = root_time - nl_cb_ptr->root_rt.tv_sec * 1e6;
+                //     // for(auto &callback : chain->getCallbacks()){
+                //     //     if(callback->is_non_linear()){
+                //     //         callback->root_rt.tv_sec = root_time / 1e6;
+                //     //         callback->root_rt.tv_usec = root_time - callback->root_rt.tv_sec * 1e6;
+
+                //     //     }
+                //     // }
+                // }
                 k++;
                 break;
             }
@@ -503,6 +794,32 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
         }
     }
 out:
+    // for each chain, we need to see if it is a subchain of a larger chain that is not in the same threadclass
+    // if it is, we need to add the response time of the larger chain to the response time of the subchain
+    int chain_idx = 0;
+    for (auto &chain : chainset)
+    {
+        struct timeval root_rt = {0, 0};
+        bool subchain = false;
+        for (auto &cb : chain->getCallbacks())
+        {
+            if (cb->branch_root_cb != nullptr)
+            {
+                subchain = true;
+                root_rt = cb->branch_root_cb->root_rt;
+                break;
+            }
+        }
+        if (subchain)
+        {
+            // find the index for the chain in the response_times vector
+            // int chain_idx = std::distance(chainset.begin(), std::find(chainset.begin(), chainset.end(), chain));
+            // update the response time for the new chain with the logged response time of the partial root subchain
+            response_times[chain_idx] += root_rt.tv_sec * 1e6 + root_rt.tv_usec;
+        }
+        chain_idx++;
+    }
+
     std::vector<struct timeval> return_response_times;
     for (size_t i = 0; i < chainset.size(); i++)
     {
@@ -844,27 +1161,26 @@ merge_open_tgs:
                         {
                             max_tg = tg_it;
                             max_util = util;
-
                         }
                     }
                 }
                 // merge the maximum utilization threadclass with the empty threadclass
-                if (max_tg != nullptr && max_tg != zero_tg)  // if the max threadclass has been found and it is not the same as the zero_tg
+                if (max_tg != nullptr && max_tg != zero_tg) // if the max threadclass has been found and it is not the same as the zero_tg
                 {
 
-                    if(zero_tg->id < max_tg->id){
+                    if (zero_tg->id < max_tg->id)
+                    {
                         std::swap(zero_tg, max_tg);
                     }
-                    std::cout << "Merging RT threadclass " << max_tg->id << " with empty RT threadclass " << zero_tg->id << std::endl;
+                    std::cerr << "Merging RT threadclass " << max_tg->id << " with empty RT threadclass " << zero_tg->id << std::endl;
 
                     max_be_id = num_rt_tg + max_tg->id;
                     be_zero_id = num_rt_tg + zero_tg->id;
 
-                    std::cout << "Merging BE threadclass " << max_be_id << " with BE threadclass " << be_zero_id << std::endl;
-                    //std::cout << " max_tg_idx: " << max_tg_id << " empty_tg_idx: " << tg_id << std::endl;
+                    std::cerr << "Merging BE threadclass " << max_be_id << " with BE threadclass " << be_zero_id << std::endl;
+                    // std::cout << " max_tg_idx: " << max_tg_id << " empty_tg_idx: " << tg_id << std::endl;
                     break;
                 }
-
             }
         }
     }
@@ -872,13 +1188,21 @@ merge_open_tgs:
     {
         max_tg->merge_threadclasss(max_tg, zero_tg);
         threadclasses.at(max_be_id)->merge_threadclasss(threadclasses.at(max_be_id), threadclasses.at(be_zero_id));
+        std::cerr << "Removing BE threadclass:  " << threadclasses.at(be_zero_id)->id << std::endl;
         threadclasses.erase(std::remove(threadclasses.begin(), threadclasses.end(), threadclasses.at(be_zero_id)), threadclasses.end());
+        std::cerr << "Removing RT threadclass:  " << threadclasses.at(zero_tg->id)->id << std::endl;
         threadclasses.erase(std::remove(threadclasses.begin(), threadclasses.end(), threadclasses.at(zero_tg->id)), threadclasses.end());
+        for (auto &tg : threadclasses)
+        {
+            if (tg->id > zero_tg->id)
+            {
+                tg->id--;
+            }
+        }
+
         num_rt_tg--;
         goto merge_open_tgs;
     }
-
-
 }
 
 bool MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, unsigned int *analysis_count, int min_budget)
@@ -892,11 +1216,13 @@ bool MPCController::reduce_rt_budget(std::shared_ptr<threadclass> tc, unsigned i
 
     // the calculations are with reference to THREAD_PERIOD whose units are nanoseconds
     // to scale the budget given to the analysis, we divide by 10000 to change our units to us from 10ms
-    if(!min_budget){
+    if (!min_budget)
+    {
         min_budget = 1024 * 10;
     }
-    else{
-        min_budget += 200000; // add 200us 
+    else
+    {
+        min_budget += 200000; // add 200us
     }
     int max_budget = THREAD_PERIOD, mid_budget = 0;
     volatile int computed_budget = 0;
@@ -1096,7 +1422,7 @@ empty_rt_chain:
         }
         else
         {
-        attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
+            attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
         }
         // attr.sched_flags = 0;
         attr.sched_nice = 0;
@@ -1139,7 +1465,7 @@ empty_rt_chain:
                 struct sched_attr attr;
                 attr.size = sizeof(attr);
                 attr.sched_policy = SCHED_DEADLINE;
-                attr.sched_runtime = remaining_budget; // offset 5% utilization because of imprecision 
+                attr.sched_runtime = remaining_budget; // offset 5% utilization because of imprecision
                 attr.sched_period = THREAD_PERIOD;
                 attr.sched_deadline = THREAD_PERIOD;
                 attr.sched_flags = 0 | SCHED_FLAG_RECLAIM;
@@ -1170,10 +1496,10 @@ empty_rt_chain:
     {
         std::cerr << "BE Threadclass " << be_tc->id << " is overloaded, expect degraded BE performance" << std::endl;
         std::cerr << "BE Threadclass " << be_tc->id << " utilization: " << be_tc->get_utilization() << std::endl;
-        std::cerr << "BE Threadclass "  << be_tc->id << " capacity: " << (double)(be_tc->num_threads) * ((double)be_tc->total_budget) / (double)THREAD_PERIOD << std::endl;
-        std::cerr << "BE Threadclass "  << be_tc->id << " budget: " << be_tc->total_budget << std::endl;
-        std::cerr << "BE Threadclass "  << be_tc->id << " period: " << THREAD_PERIOD << std::endl;
-        std::cerr << "BE Threadclass "  << be_tc->id << " threads: " << be_tc->num_threads << std::endl;
+        std::cerr << "BE Threadclass " << be_tc->id << " capacity: " << (double)(be_tc->num_threads) * ((double)be_tc->total_budget) / (double)THREAD_PERIOD << std::endl;
+        std::cerr << "BE Threadclass " << be_tc->id << " budget: " << be_tc->total_budget << std::endl;
+        std::cerr << "BE Threadclass " << be_tc->id << " period: " << THREAD_PERIOD << std::endl;
+        std::cerr << "BE Threadclass " << be_tc->id << " threads: " << be_tc->num_threads << std::endl;
     }
     else
     {
@@ -1187,14 +1513,14 @@ empty_rt_chain:
         if (be_response_times[i].tv_sec * 1e6 + be_response_times[i].tv_usec > 20e7 - 100 || be_response_times[i].tv_sec * 1e6 + be_response_times[i].tv_usec <= 0) // don't compare with 20e7; double is inaccurate
         {
             std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " on threadclass: " << be_tc->id << " is not starvation free" << std::endl;
-            //std::cout << "BE Chain " << i << " is not starvation free" << std::endl;
+            // std::cout << "BE Chain " << i << " is not starvation free" << std::endl;
         }
         else
         {
             std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " on threadclass: " << be_tc->id << " is starvation free" << std::endl;
-            std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " WCRT: " << be_response_times[i].tv_sec*1000000 +be_response_times[i].tv_usec << std::endl;
-            //std::cout << "BE Chain " << i << " is starvation free" << std::endl;
-            //std::cout << "Estimated Response Time for Chain " << i << ": " << be_response_times[i].tv_sec << "s " << be_response_times[i].tv_usec << "us" << std::endl;
+            std::cout << "BE Chain: " << be_tc->get_chains()[i]->getChainID() << " WCRT: " << be_response_times[i].tv_sec * 1000000 + be_response_times[i].tv_usec << std::endl;
+            // std::cout << "BE Chain " << i << " is starvation free" << std::endl;
+            // std::cout << "Estimated Response Time for Chain " << i << ": " << be_response_times[i].tv_sec << "s " << be_response_times[i].tv_usec << "us" << std::endl;
         }
     }
     return realloc;

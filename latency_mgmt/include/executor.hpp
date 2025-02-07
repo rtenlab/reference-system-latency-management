@@ -85,6 +85,8 @@ public:
     std::shared_ptr<executor_thread> get_thread(int threadID);
     void apply_callback_to_thread_assignment();
     void assign_cv(std::shared_ptr<std::condition_variable> cv_ptr, std::shared_ptr<std::mutex> mtx_ptr);
+    void add_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group, std::shared_ptr<Callback> node,  int id);
+    void add_chain_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group, std::shared_ptr<Chain> chain);
 
 private:
     std::shared_ptr<std::condition_variable> cv_ptr;
@@ -105,6 +107,9 @@ private:
     std::vector<std::shared_ptr<std::thread>> raw_threads;
     std::vector<std::shared_ptr<Chain>> sorted_rt_chains;
     std::vector<std::shared_ptr<Chain>> sorted_be_chains;
+    std::vector<std::pair<int, std::shared_ptr<rclcpp::CallbackGroup>>> callback_groups; 
+    //std::vector<std::shared_ptr<rclcpp::CallbackGroup>> callback_groups;
+
     friend class executor_thread;
 };
 

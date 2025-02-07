@@ -108,19 +108,31 @@ void threadclass::merge_threadclasss(std::shared_ptr<threadclass> tg1, std::shar
     for (auto &thread : tg2->threads)
     {
         threads.push_back(thread);
+        std::cerr << "Thread: " << thread->get_threadID() <<  "added to threadclass " << id  << " from threadclass: " << tg2->id <<std::endl;
+        std::cerr << "Threadclass " << id << " now has " << threads.size() << " threads" << std::endl;
     }
+    
     // for( auto &chain : tg1->chains){
     //     chains.push_back(chain);
     // }
     for( auto &chain : tg2->chains){
         chains.push_back(chain);
+    }
+    for (auto &chain : chains)
+    {
         for(auto &thread : threads){
             thread->add_chain_to_thread(chain);
         }
     }
     num_threads = tg1->num_threads + tg2->num_threads;
     rt_threadclass = tg1->rt_threadclass && tg2->rt_threadclass;
-    utilization = tg1->utilization + tg2->utilization;
+    // if thr threadclass already has 2+ threads, we need to recompute the utilization
+    
+    auto current_util_per_thread = tg1->utilization*tg1->num_threads;
+    current_util_per_thread += tg2->utilization*tg2->num_threads;
+    utilization = current_util_per_thread/num_threads;
+    //utilization = (tg1->utilization + tg2->utilization);
+    //utilization = tg1->utilization + tg2->utilization;
     
 
 }

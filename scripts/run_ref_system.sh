@@ -21,7 +21,7 @@ colcon build --symlink-install --cmake-args -DPICAS=TRUE -DLATENCY_MGMT=TRUE -DP
 source "$SCRIPT_DIR/../install/setup.bash"
 
 # Run the latency management program and pipe the output to a file
-"$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt" > "$SCRIPT_DIR/latency_mgmt_output.txt" &
+"$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt 1" > "$SCRIPT_DIR/latency_mgmt_output.txt" &
 #"$SCRIPT_DIR/build/latency_mgmt/latency_mgmt"
 
 # after some 10 minutes, kill the executor process
@@ -34,7 +34,7 @@ colcon build --symlink-install --cmake-args -DPICAS=TRUE -DLATENCY_MGMT=FALSE -D
 
 source "$SCRIPT_DIR/../install/setup.bash"
 
-"$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt" > "$SCRIPT_DIR/picas.txt" &
+"$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt 1" > "$SCRIPT_DIR/picas.txt" &
 sleep 300
 pkill -f latency_mgmt
 
@@ -43,7 +43,7 @@ cd "$SCRIPT_DIR/../"
 colcon build --symlink-install --cmake-args -DPICAS=TRUE -DLATENCY_MGMT=FALSE -DPICAS_THREAD_AFFINITY=FALSE
 source "$SCRIPT_DIR/../install/setup.bash"
 
-"$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt" > "$SCRIPT_DIR/default.txt" &
+"$SCRIPT_DIR/../build/latency_mgmt/latency_mgmt 1" > "$SCRIPT_DIR/default.txt" &
 
 sleep 300
 

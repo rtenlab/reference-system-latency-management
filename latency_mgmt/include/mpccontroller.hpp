@@ -39,6 +39,7 @@ public:
     void reallocate_chains(unsigned int* analysis_count);
     void update_tc_utilization(std::shared_ptr<threadclass> tc);
     void reallocate_be_chains();
+    timeval do_partial_analysis(std::vector<std::shared_ptr<Chain> >, std::shared_ptr<threadclass>, int, std::shared_ptr<Chain>, std::shared_ptr<Callback>);
     void verify_starvation_freedom(std::shared_ptr<threadclass> be_tc);
     std::vector<struct timeval> pwa_cd(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget);
     
