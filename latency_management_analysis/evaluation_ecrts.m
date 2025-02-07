@@ -24,11 +24,12 @@ chain_response_times = [];
 % Initialize lists for best-effort (BE) and real-time (RT) chain response times
 be_chain_response_times = [];
 rt_chain_response_times = [];
+controller_act_times = [];
 be_chain_bounds = [];
 % Parallelize for faster execution, this is taking way too long for the
 % processing to actually happen.
 % 
-parfor i = 1:height(latency_mgmt_data)
+for i = 1:height(latency_mgmt_data)
     % Extract the value from VarName3 to compare with "prio"
     test_col = string(latency_mgmt_data.VarName4(i));
     
@@ -47,21 +48,39 @@ parfor i = 1:height(latency_mgmt_data)
             rt_chain_response_times = [rt_chain_response_times; valid_row];
         elseif strcmp(string(latency_mgmt_data.Thread(i)), "BE")
             be_chain_response_times = [be_chain_response_times; valid_row];
-            
         end
+
     elseif strcmp(test_col, "WCRT")
         bound_row = struct(...
             'chain_id', latency_mgmt_data.VarName3(i), ...
             'wcrt', latency_mgmt_data.VarName5(i) ...
             );
         be_chain_bounds = [be_chain_bounds; bound_row];
+    elseif strcmp(latency_mgmt_data.Thread(i), "Controller") && str2double(test_col) > 2
+        controller_act_times = [controller_act_times; str2double(test_col)];
     end
+
 end
 
-
-
-% filter data errors
+controller_act_times = rmmissing(controller_act_times);
+figure();
+subplot(2,1,1);
+plot(controller_act_times);
+title('Controller Activation Times');
+xlabel('Controller Instance');
+ylabel('Execution Time (\mus)');
+ylim([0 max(controller_act_times)+50000])
+xticks(0:length(controller_act_times))
+ax = gca;
+ax.YAxis.Exponent = 0;
+grid minor;
+subplot(2,1,2)
+boxplot(controller_act_times)
+xlabel('Controller');
+ylabel('Execution Time (\mus)');% filter data errors
+grid minor;
 % Convert to table
+
 tempTable = struct2table(rt_chain_response_times);
 tempTable = rmmissing(tempTable);
 rt_chain_response_times = table2struct(tempTable);
@@ -103,10 +122,12 @@ rt_deadlines = [200000 200000 100000];
 xt = [0.75 1.75 2.75];
 yt = rt_deadlines + 10000;
 str = ["D = 200ms" "D = 200ms" "D = 100ms"];
-line([0.5 1.5],rt_deadlines(1)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
-line([1.5 2.5],rt_deadlines(2)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
-line([2.5 3.5],rt_deadlines(3)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
+line([0.5 1.5],rt_deadlines(1)*([1 1]),'Color','magenta', 'LineWidth',2 );
+line([1.5 2.5],rt_deadlines(2)*([1 1]),'Color','magenta', 'LineWidth',2 );
+line([2.5 3.5],rt_deadlines(3)*([1 1]),'Color','magenta', 'LineWidth',2 );
 text(xt, yt, str);
+ax = gca;
+ax.YAxis.Exponent = 0;
 % Extract unique BE chain IDs from be_chain_response_times
 be_chain_ids = unique([be_chain_response_times.chain_id]);
 
@@ -135,6 +156,8 @@ title('Response Times for BE Chains (LaME Data)');
 xlabel('Chain ID');
 ylabel('Response Time (\mus)');
 ylim([0, 2.5e5]);
+ax = gca;
+ax.YAxis.Exponent = 0;
 grid minor;
 x =[];
 y=[];
@@ -215,9 +238,9 @@ xlabel('Chain ID');
 ylabel('Response Time (\mus)');
 ylim([0, 2.5e5]);
 grid minor;
-line([0.5 1.5],rt_deadlines(1)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
-line([1.5 2.5],rt_deadlines(2)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
-line([2.5 3.5],rt_deadlines(3)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
+line([0.5 1.5],rt_deadlines(1)*([1 1]),'Color','magenta', 'LineWidth',2 );
+line([1.5 2.5],rt_deadlines(2)*([1 1]),'Color','magenta', 'LineWidth',2 );
+line([2.5 3.5],rt_deadlines(3)*([1 1]),'Color','magenta', 'LineWidth',2 );
 text(xt, yt, str);
 
 parfor k = 1:length(be_picas_chain_ids)
@@ -312,9 +335,9 @@ ylabel('Response Time (\mus)');
 xlabel('Real-Time Chains');
 ylim([0, 2.5e5]);
 title('Response Times for RT Chains (Default Data)');
-line([0.5 1.5],rt_deadlines(1)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
-line([1.5 2.5],rt_deadlines(2)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
-line([2.5 3.5],rt_deadlines(3)*([1 1]),'Color','magenta', 'LineWidth',1.5 );
+line([0.5 1.5],rt_deadlines(1)*([1 1]),'Color','magenta', 'LineWidth',2 );
+line([1.5 2.5],rt_deadlines(2)*([1 1]),'Color','magenta', 'LineWidth',2 );
+line([2.5 3.5],rt_deadlines(3)*([1 1]),'Color','magenta', 'LineWidth',2 );
 text(xt, yt, str);
 hold off;
 
@@ -333,6 +356,14 @@ parfor k = 1:length(be_default_chain_ids)
     % Collect response times
     response_times_grouped_be_default{k} = [chain_data.response_time];
 end
+
+% parfor i = 1:length(be_default_chain_ids)
+%     chain_id = be_default_chain_ids(i);
+%     % Extract response times for each chain ID
+%     response_times = [be_default_chain_response_times([be_default_chain_response_times.chain_id] == chain_id).response_time];
+%     be_default_response_times_data = [be_default_response_times_data, response_times];
+%     be_group_labels = [be_group_labels; repmat({sprintf('BE Chain %d', chain_id)}, length(response_times), 1)];
+% end
 
 % Create a boxplot for BE chains
 figure;
