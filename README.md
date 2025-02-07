@@ -104,6 +104,21 @@ Please go to the `README.md` file specific for the _reference system_ you would 
 Use `-DPICAS=TRUE` to build the [PICAS executor](https://github.com/rtenlab/ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
 
 ### Latency Management Executor
-Use `-DLAME=TRUE` to build the [Latency Management executor](ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
+Use `-DLATENCY_MGMT=TRUE` to build the [Latency Management executor](ros2-picas). For more details, see [README.md](autoware_reference_system/README.md) in `Autoware Reference System`.
 
+### DEBUG
+```
+colcon build --symlink-install --allow-overriding rclcpp test_msgs --cmake-args  -DPICAS=TRUE -DPICAS_THREAD_AFFINITY=TRUE -DLATENCY_MGMT=TRUE -DCMAKE_BUILD_TYPE=relwithdebinfo -DCMAKE_CXX_FLAGS=" -g -funwind-tables -fno-omit-frame-pointer"
+```
+### How to run and test the executor
+1. Build with colcon: 
+    ```
+        colcon build --symlink-install --allow-overriding rclcpp test_msgs --cmake-args  -DPICAS=TRUE -DPICAS_THREAD_AFFINITY=TRUE -DLATENCY_MGMT=TRUE -DCMAKE_BUILD_TYPE=relwithdebinfo 
+    ```
+2. Run the tests as root and generate output
+    ```
+        source ./install/setup.bash
+        .build/latency_mgmt/latency_mgmt <test number (1 or 2)> > latency_mgmt_output.txt
+    ```
+3. After sufficient time, kill the latency mgmt process and use the analysis scripts in latency_mgmt_analysis directory. The script to parse the output file you direct stdout to is 'evaluation_rtas.m'. The first section generates the figures. 
 
