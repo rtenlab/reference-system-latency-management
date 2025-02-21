@@ -43,6 +43,7 @@ void threadclass::add_chain(std::shared_ptr<Chain> chain)
 }
 void threadclass::remove_chain(std::shared_ptr<Chain> chain)
 {
+    
     chains.erase(std::remove(chains.begin(), chains.end(), chain), chains.end());
     for(auto &callback : chain->getCallbacks()){
         callbacks.erase(std::remove(callbacks.begin(), callbacks.end(), callback), callbacks.end());
@@ -108,7 +109,7 @@ void threadclass::merge_threadclasss(std::shared_ptr<threadclass> tg1, std::shar
     for (auto &thread : tg2->threads)
     {
         threads.push_back(thread);
-        std::cerr << "Thread: " << thread->get_threadID() <<  "added to threadclass " << id  << " from threadclass: " << tg2->id <<std::endl;
+        std::cerr << "Thread: " << thread->get_threadID() <<  " added to threadclass " << id  << " from threadclass: " << tg2->id <<std::endl;
         std::cerr << "Threadclass " << id << " now has " << threads.size() << " threads" << std::endl;
     }
     

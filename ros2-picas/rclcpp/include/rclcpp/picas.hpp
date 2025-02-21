@@ -50,62 +50,225 @@ static inline bool is_timespec_equal(struct timespec &t1, struct timespec &t2)
 }*/
 
 #include <mutex>
+#include <sstream>
 #include <condition_variable>
-#include <boost/lockfree/queue.hpp>
 #include <queue>
+#include <pthread.h>
+#include <cstring>
+#include <stdexcept>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <atomic>
+#include <cerrno>
+#include <stdexcept>
 
 extern thread_local size_t thread_id;
 extern thread_local bool is_rt_thread;
 
-#if 1
 class ordered_mutex {
-  std::atomic<bool> locked_{false};
-  std::queue<size_t> rt_wait_queue_;
-  std::queue<size_t> be_wait_queue_;
-  std::mutex global_mutex_;
-  std::atomic<size_t> owner_id_{0};
+private:
+    std::atomic<uint32_t> futex_{0};  // futex
+
+    void futex_wait(int op) {
+        while (syscall(SYS_futex, &futex_, op, 1, nullptr, nullptr, 0) == -1) {
+            if (errno != EINTR) { 
+                throw std::runtime_error("Futex operation failed");
+            }
+        }
+    }
 
 public:
-  void lock() {
-    size_t tid = thread_id;
-    {
-      std::lock_guard<std::mutex> lock(global_mutex_);
-      if (is_rt_thread) {
-        rt_wait_queue_.push(tid);
-      } else {
-        be_wait_queue_.push(tid);
-      }
+    ordered_mutex() = default;
+
+    ~ordered_mutex() = default;
+
+    void lock() {
+        futex_wait(FUTEX_LOCK_PI);
     }
 
-    while (true) {
-      std::lock_guard<std::mutex> lock(global_mutex_);
-      if (!locked_.load(std::memory_order_acquire)) {
-        if (!rt_wait_queue_.empty() && rt_wait_queue_.front() == tid) {
-          rt_wait_queue_.pop();
-        } else if (!be_wait_queue_.empty() && be_wait_queue_.front() == tid) {
-          be_wait_queue_.pop();
-        } else {
-          continue;
+    void unlock() {
+        if (syscall(SYS_futex, &futex_, FUTEX_UNLOCK_PI, 0, nullptr, nullptr, 0) == -1) {
+            throw std::runtime_error("Futex unlock failed");
         }
-        
-        locked_.store(true, std::memory_order_acquire);
-        owner_id_.store(tid, std::memory_order_release);
-        return;
-      }
     }
-  }
-
-  void unlock() {
-    std::lock_guard<std::mutex> lock(global_mutex_);
-    if (owner_id_.load(std::memory_order_acquire) == thread_id) {
-      owner_id_.store(0, std::memory_order_release);
-      locked_.store(false, std::memory_order_release);
-    }
-  }
 };
 
 
-#endif
+
+
+
+
+
+// class ordered_mutex {
+//   std::atomic<bool> locked_{false};
+//   std::queue<size_t> rt_wait_queue_;
+//   std::queue<size_t> be_wait_queue_;
+//   pthread_mutex_t m_ = PTHREAD_MUTEX_INITIALIZER;
+//   std::atomic<size_t> owner_id_{0};
+
+//   public:
+
+//   using native_handle_type = pthread_mutex_t*;
+
+//   ordered_mutex() {
+//     pthread_mutexattr_t attr;
+
+//     int res = pthread_mutexattr_init(&attr);
+//     if (res != 0) {
+//       throw std::runtime_error{std::string("cannot pthread_mutexattr_init: ") + std::strerror(res)};
+//     }
+
+//     res = pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_INHERIT);
+//     if (res != 0) {
+//       throw std::runtime_error{std::string("cannot pthread_mutexattr_setprotocol: ") + std::strerror(res)};
+//     }
+
+//     res = pthread_mutex_init(&m_, &attr);
+//     if (res != 0) {
+//       throw std::runtime_error{std::string("cannot pthread_mutex_init: ") + std::strerror(res)};
+//     }
+//   }
+
+//   ~ordered_mutex() {
+//     pthread_mutex_destroy(&m_);
+//   }
+
+//   void lock() {
+//     auto res = pthread_mutex_lock(&m_);
+//     if (res != 0) {
+//       throw std::runtime_error(std::string("failed pthread_mutex_lock: ") + std::strerror(res));
+//     }
+//   }
+
+//   void unlock() noexcept {
+//     pthread_mutex_unlock(&m_);
+//   }
+
+//   bool try_lock() noexcept {
+//     return pthread_mutex_trylock(&m_) == 0;
+//   }
+
+//   native_handle_type native_handle() noexcept {
+//     return &m_;
+//   };
+
+// };
+
+// class ordered_mutex {
+//   std::atomic<bool> locked_{false};
+//   std::queue<size_t> rt_wait_queue_;
+//   std::queue<size_t> be_wait_queue_;
+//   std::mutex global_mutex_;
+//   std::atomic<size_t> owner_id_{0};
+
+// public:
+//   void lock() {
+//     size_t tid = thread_id;
+//     {
+//       std::lock_guard<std::mutex> lock(global_mutex_);
+//       if (is_rt_thread) {
+//         rt_wait_queue_.push(tid);
+//       } else {
+//         be_wait_queue_.push(tid);
+//       }
+//     }
+
+//     while (true) {
+//       std::lock_guard<std::mutex> lock(global_mutex_);
+//       if (!locked_.load(std::memory_order_acquire)) {
+//         if (!rt_wait_queue_.empty() && rt_wait_queue_.front() == tid) {
+//           rt_wait_queue_.pop();
+//         } else if (!be_wait_queue_.empty() && be_wait_queue_.front() == tid) {
+//           be_wait_queue_.pop();
+//         } else {
+//           continue;
+//         }
+        
+//         locked_.store(true, std::memory_order_acquire);
+//         owner_id_.store(tid, std::memory_order_release);
+//         return;
+//       }
+//     }
+//   }
+
+//   void unlock() {
+//     std::lock_guard<std::mutex> lock(global_mutex_);
+//     if (owner_id_.load(std::memory_order_acquire) == thread_id) {
+//       owner_id_.store(0, std::memory_order_release);
+//       locked_.store(false, std::memory_order_release);
+//     }
+//   }
+// };
+
+
+
+
+
+// #if 1
+// class ordered_mutex {
+//     std::atomic<bool> locked_{false};
+//     std::queue<size_t> rt_wait_queue_;
+//     std::queue<size_t> be_wait_queue_;
+//     std::mutex global_mutex_;
+//     std::atomic<size_t> owner_id_{0};
+//     std::condition_variable cv_;
+
+// public:
+//     bool try_lock() {
+//         bool expected = false;
+//         if (locked_.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
+//             owner_id_.store(thread_id, std::memory_order_release);
+//             return true;
+//         }
+//         return false;
+//     }
+
+//     void lock() {
+//         //use trylock to avoid queueing if possible -- not safe FIFO is not respected
+//         //if (try_lock()) return;
+
+//         // grab queue lock
+//         std::unique_lock<std::mutex> lock(global_mutex_);
+//         // push tid to queue
+//         if (is_rt_thread) {
+//             rt_wait_queue_.push(thread_id);
+//         } else {
+//             be_wait_queue_.push(thread_id);
+//         }
+//         // wait on cv while not first in queue
+//         cv_.wait(lock, [this] {
+//             if (locked_.load(std::memory_order_acquire)) return false;
+            
+//             size_t tid = thread_id;
+//             if (!rt_wait_queue_.empty() && rt_wait_queue_.front() == tid) {
+//                 rt_wait_queue_.pop();
+//                 return true;
+//             }
+//             if (rt_wait_queue_.empty() && !be_wait_queue_.empty() && be_wait_queue_.front() == tid) {
+//                 be_wait_queue_.pop();
+//                 return true;
+//             }
+//             return false;
+//         });
+//         // set lock and owner
+//         locked_.store(true, std::memory_order_release);
+//         owner_id_.store(thread_id, std::memory_order_release);
+//     }
+
+//     void unlock() {
+//         if (owner_id_.load(std::memory_order_acquire) == thread_id) {
+//             owner_id_.store(0, std::memory_order_release);
+//             locked_.store(false, std::memory_order_release);
+            
+//             std::lock_guard<std::mutex> lock(global_mutex_);
+//             cv_.notify_all();
+//         }
+//     }
+// };
+
+
+//#endif
 
 
 

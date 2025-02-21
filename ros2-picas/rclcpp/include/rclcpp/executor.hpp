@@ -69,6 +69,9 @@ class Executor
 public:
   RCLCPP_SMART_PTR_DEFINITIONS_NOT_COPYABLE(Executor)
 
+  RCLCPP_PUBLIC
+  void wait_for_work_unlocked(std::chrono::nanoseconds, ordered_mutex*);
+
   /// Default constructor.
   /**
    * \param[in] options Options used to configure the executor.
@@ -320,6 +323,7 @@ public:
   RCLCPP_PUBLIC
   virtual void
   spin_once(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
+  //spin_once(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
 
   /// Spin (blocking) until the future is complete, it times out waiting, or rclcpp is interrupted.
   /**
@@ -661,7 +665,8 @@ protected:
    */
   RCLCPP_PUBLIC
   void
-  wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
+  wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(0));
+  //wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
 
   RCLCPP_PUBLIC
   rclcpp::node_interfaces::NodeBaseInterface::SharedPtr
@@ -717,13 +722,28 @@ protected:
   get_next_ready_executable_from_map(
     AnyExecutable & any_executable,
     const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes);
+    RCLCPP_PUBLIC
+  bool
+  get_next_ready_executable_checked(AnyExecutable & any_executable, int *retval);
+
+  RCLCPP_PUBLIC
+  bool
+  get_next_ready_executable_from_map_checked(
+    AnyExecutable & any_executable,
+    const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes, int *retval);
 
   RCLCPP_PUBLIC
   bool
   get_next_executable(
     AnyExecutable & any_executable,
     std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
-
+    //std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
+  RCLCPP_PUBLIC
+  bool
+  get_next_executable_unlocked(
+    AnyExecutable & any_executable, 
+    std::chrono::nanoseconds timeout, 
+    ordered_mutex *exec_mutex);
   /// Add all callback groups that can be automatically added from associated nodes.
   /**
    * The executor, before collecting entities, verifies if any callback group from

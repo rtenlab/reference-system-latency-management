@@ -4,3 +4,12 @@ build/
 install/
 log/
 scripts/.test/
+*.o
+*.cmd
+*.cmd.o
+*.ko
+*.mod
+*.mod.*
+test_mutex
+*.symvers
+*.order

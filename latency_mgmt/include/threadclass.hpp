@@ -33,6 +33,8 @@ class threadclass
         std::vector<std::shared_ptr<Chain>> get_chains();
         void set_period(int period);
         int get_period();
+        std::vector<struct timeval> chain_response_times;
+
     private:
         double utilization;
         int num_threads;

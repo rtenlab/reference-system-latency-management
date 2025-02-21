@@ -29,7 +29,8 @@ using std::placeholders::_1;
 //std::mutex mtx;
 
 #define gettid() syscall(__NR_gettid)
-#define THREAD_PERIOD_US "1000" // 10ms
+//#define THREAD_PERIOD_US "10000" // 10ms
+#define THREAD_PERIOD_US "5000" // 5ms
 void test_case_1();
 void test_case_2();
 void set_rt_runtime_unlimited();
@@ -44,14 +45,15 @@ int main(int argc, char * argv[])
         return -1;
     }
 
-    struct sched_param param;
-    param.sched_priority = 95;
-    if (sched_setscheduler(0, SCHED_FIFO, &param) != 0) {
-        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to set real-time scheduler: %s", strerror(errno));
-        return -1;
-    }
+    // struct sched_param param;
+    // param.sched_priority = 95;
+    // if (sched_setscheduler(0, SCHED_FIFO, &param) != 0) {
+    //     RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to set real-time scheduler: %s errno: %i", strerror(errno), errno);
+    //     return -1;
+    // }
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
+    CPU_SET(5, &cpuset);
     CPU_SET(6, &cpuset);
     CPU_SET(7, &cpuset);
     if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
@@ -378,19 +380,25 @@ void test_case_1(){
     MPCController mpc;
     mpc.assign_executor(&ex);
     std::thread mpc_thread(&MPCController::run, &mpc);
-    struct sched_param param2;
-    param2.sched_priority = 90;
-    int policy = SCHED_FIFO;
-    int ret = pthread_setschedparam(mpc_thread.native_handle(), policy, &param2);
-
-    if (ret != 0)
-    {
-        std::cerr << "Failed to set mpc controller thread to RT Prio 99: " << strerror(errno) << std::endl;
-    }
-    else
-    {
-        std::cout << "Successfully set mpc controller thread to RT Prio 99." << std::endl;
-    }
+    // struct sched_param param2;
+    // param2.sched_priority = 90;
+    // int policy = SCHED_FIFO;
+    // int ret = pthread_setschedparam(mpc_thread.native_handle(), policy, &param2);
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(4, &cpuset);
+    CPU_SET(5, &cpuset);
+    CPU_SET(6, &cpuset);
+    CPU_SET(7, &cpuset);
+    pthread_setaffinity_np(mpc_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+    // if (ret != 0)
+    // {
+    //     std::cerr << "Failed to set mpc controller thread to RT Prio 99: " << strerror(errno) << std::endl;
+    // }
+    // else
+    // {
+    //     std::cout << "Successfully set mpc controller thread to RT Prio 99." << std::endl;
+    // }
 
     mpc_thread.join();
 #endif // latency_mgmt

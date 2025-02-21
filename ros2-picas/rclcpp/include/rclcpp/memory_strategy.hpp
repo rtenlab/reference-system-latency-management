@@ -68,7 +68,30 @@ public:
 
   virtual void
   remove_guard_condition(const rclcpp::GuardCondition * guard_condition) = 0;
+  virtual void
+  get_next_subscription_checked(
+    rclcpp::AnyExecutable & any_exec,
+    const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes, int *retval) = 0;
 
+  virtual void
+  get_next_service_checked(
+    rclcpp::AnyExecutable & any_exec,
+    const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes, int *retval) = 0;
+
+  virtual void
+  get_next_client_checked(
+    rclcpp::AnyExecutable & any_exec,
+    const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes, int *retval) = 0;
+
+  virtual void
+  get_next_timer_checked(
+    rclcpp::AnyExecutable & any_exec,
+    const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes, int *retval) = 0;
+
+  virtual void
+  get_next_waitable_checked(
+    rclcpp::AnyExecutable & any_exec,
+    const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes, int *retval) = 0;
   virtual void
   get_next_subscription(
     rclcpp::AnyExecutable & any_exec,

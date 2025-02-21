@@ -144,7 +144,10 @@ bool Chain::get_branch_rt(size_t branch_id)
 {
     return branch_rt[branch_id];
 }
-
+struct timeval Chain::get_branch_latency_target(size_t branch_id)
+{
+    return branch_latency_targets[branch_id];
+}
 void Chain::setLatencyTarget(struct timeval latencyTarget, size_t branch_id, bool rt)
 {
     // this->latency_target = latencyTarget;

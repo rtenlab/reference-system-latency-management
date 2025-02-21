@@ -55,6 +55,9 @@ public:
 
     void setLatencyTarget(struct timeval latencyTarget, size_t branch_id, bool rt);
     std::vector<struct timeval>* getLatencyTargets();
+    
+    struct timeval get_branch_latency_target(size_t branch_id);
+
 
     void printChain();
     void printCallbacks();

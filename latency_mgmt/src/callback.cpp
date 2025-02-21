@@ -404,11 +404,11 @@ void Callback::execute_timer()
     // if the recording delay has not been changed from the default value, record the time it takes to log the response time
     struct timespec start_ts, end_ts;
 
-    if (!timerisset(&recording_delay))
-    {
+    //if (!timerisset(&recording_delay))
+    //{
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start_ts);
         // gettimeofday(&rec_start, NULL);
-    }
+    //}
     ///////////////////////////////////////////////////////////
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
     timespec_to_timeval(&start, &start_tv);
@@ -422,16 +422,20 @@ void Callback::execute_timer()
     { // last callback: record response time
         record_response_time(chain_instance_id);
     }
-    if (!timerisset(&recording_delay))
-    {
+    //if (!timerisset(&recording_delay))
+    //{
         // gettimeofday(&rec_end, NULL);
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end_ts);
         timespec_to_timeval(&start_ts, &rec_start);
         timespec_to_timeval(&end_ts, &rec_end);
         struct timeval rec_time;
         timersub(&rec_end, &rec_start, &rec_time);
-        recording_delay = rec_time;
-    }
+        if (timercmp(&rec_time, &recording_delay, >)){
+            recording_delay = rec_time;
+        }
+
+        //recording_delay = rec_time;
+    //}
 }
 std::mutex &Callback::get_mutex()
 {
@@ -492,11 +496,11 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg
     // if the recording delay has not been changed from the default value, record the time it takes to log the response time
     struct timespec start_ts, end_ts;
 
-    if (!timerisset(&recording_delay))
-    {
+    //if (!timerisset(&recording_delay))
+    //{
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start_ts);
         // gettimeofday(&rec_start, NULL);
-    }
+    //}
     ///////////////////////////////////////////////////////////
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
 
@@ -513,17 +517,20 @@ void Callback::execute_sub(const test_interfaces::msg::TestString::UniquePtr msg
     { // last callback: record response time
         record_response_time(chain_instance_id);
     }
-    if (!timerisset(&recording_delay))
-    {
+    //if (!timerisset(&recording_delay))
+    //{
         // gettimeofday(&rec_end, NULL);
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end_ts);
         timespec_to_timeval(&start_ts, &rec_start);
         timespec_to_timeval(&end_ts, &rec_end);
         struct timeval rec_time;
         timersub(&rec_end, &rec_start, &rec_time);
-        recording_delay = rec_time;
-        std::cout << "Recording delay: " << recording_delay.tv_sec << "s " << recording_delay.tv_usec << "us" << " for callback " << name << std::endl;
-    }
+        if(timercmp(&rec_time, &recording_delay, >)){
+            recording_delay = rec_time;
+        }
+        //recording_delay = rec_time;
+        //std::cout << "Recording delay: " << recording_delay.tv_sec << "s " << recording_delay.tv_usec << "us" << " for callback " << name << std::endl;
+    //}
 }
 
 void Callback::record_response_time(int chain_instance_id)

@@ -10,10 +10,12 @@
 #include <stdio.h>
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
-
+#define THREAD_PERIOD 5000000 // 5ms
+#define THREAD_PERIOD_US 5000 // 5ms
+#define US_OFFSET 5120
 //#define THREAD_PERIOD 10000000 // 10ms
-#define THREAD_PERIOD 1000000 // 1ms
-#define US_OFFSET 1024
+//#define THREAD_PERIOD 1000000 // 1ms
+//#define US_OFFSET 10240
 std::vector<executor *> executor::instances;
 
 #define LOGGER(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)
@@ -60,7 +62,7 @@ bool CompareCallback::operator()(const std::pair<std::shared_ptr<Callback>, int>
     else
     {
         // std::cout << "Sequence Number" << std::endl;
-        return a.second > b.second; // if both timer or both subscription, compare by sequence number (std::prio_queue does not enforce FIFO)
+        return a.second > b.second; // if both timer or both subscription, compare by sequence (std::prio_queue does not enforce FIFO)
     }
 }
 
@@ -787,7 +789,8 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
             auto thing = is_rt_thread ? "RT" : "BE";
             int dbg_tid = thread_id % number_of_threads_;
             nvtxRangeId_t range_id = nvtxRangeStartA(string_format("%s Thread %i getting lock", thing, dbg_tid).c_str());
-            std::lock_guard wait_lock{wait_mutex_};
+            //std::lock_guard wait_lock{wait_mutex_};
+            wait_mutex_.lock();
             nvtxRangeEnd(range_id);
 
             PICAS_INFO("[run] thread %lu", thread_id);
@@ -798,13 +801,17 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
                 PICAS_INFO("[run] thread %lu - lock acquired", thread_id);
                 if (!rclcpp::ok(this->context_) || !spinning.load())
                 {
+                    wait_mutex_.unlock();
                     return;
                 }
-                if (!get_next_executable(any_exec, next_exec_timeout_))
+                if (!get_next_executable_unlocked(any_exec, next_exec_timeout_, &wait_mutex_))
+                //if (!get_next_executable_unlocked(any_exec, std::chrono::nanoseconds(0), &wait_mutex_))
                 {
+                    wait_mutex_.unlock();
                     continue;
                 }
             }
+            wait_mutex_.unlock();
         }
         // LOGGER("[run] thread %lu - get next executable", thread_id);
         if (yield_before_execute_)
