@@ -160,24 +160,27 @@ void MPCController::verify_starvation_freedom(std::shared_ptr<threadclass> be_tc
     static int tries = 0;
     auto prev_response_times = be_tc->chain_response_times;
     bool use_ad_analysis = false;
-    for(unsigned long int j = 0; j < prev_response_times.size(); j++){
+    for (unsigned long int j = 0; j < prev_response_times.size(); j++)
+    {
         struct timeval test_tv = be_tc->get_chains()[j]->getDeadline();
-        if(timercmp(&prev_response_times[j], &test_tv  , >) || (prev_response_times[j].tv_sec < 0 || prev_response_times[j].tv_usec < 0 ) ){
+        if (timercmp(&prev_response_times[j], &test_tv, >) || (prev_response_times[j].tv_sec < 0 || prev_response_times[j].tv_usec < 0))
+        {
             use_ad_analysis = true;
             break;
         }
     }
     std::vector<timeval> be_response_times;
 
-    if(use_ad_analysis){
+    if (use_ad_analysis)
+    {
         be_response_times = pwa_ad(be_tc->chains, be_tc, be_tc->total_budget / NS_IN_US);
     }
-    else{
+    else
+    {
         be_response_times = pwa_cd(be_tc->chains, be_tc, be_tc->total_budget / NS_IN_US);
     }
-    //auto be_response_times = pwa_ad(be_tc->chains, be_tc, be_tc->total_budget / NS_IN_US);
-    //be_tc->chain_response_times = be_response_times;
-
+    // auto be_response_times = pwa_ad(be_tc->chains, be_tc, be_tc->total_budget / NS_IN_US);
+    // be_tc->chain_response_times = be_response_times;
 
     std::cout << "BE Threadclass " << be_tc->id << " response times: " << std::endl;
     for (size_t i = 0; i < be_response_times.size(); i++)
@@ -499,7 +502,7 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
     auto k = root_chain->getChainID(); // we want to do a partial analysis on the root chain
     double delta = 1;
     auto E_k = 1;
-    auto MSG_DELAY = 500, QUEUE_DELAY = 0;
+    auto MSG_DELAY = 200, QUEUE_DELAY = 0;
     auto response_time = 0.0;
     bool nonlinear_cb = true;
     for (auto &callback : root_chain->getCallbacks())
@@ -522,6 +525,10 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
         for (auto &interf_chain : chainset)
         {
             {
+                if (!this->exec->is_running())
+                {
+                    break;
+                }
                 // calculate the interference
                 // T is the period of the interfering chain
                 auto T = interf_chain->getPeriod().tv_sec * 1e6 + interf_chain->getPeriod().tv_usec;
@@ -606,7 +613,7 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
         // if W is negative, increment delta
         if (W < 0)
         {
-            delta+=1000;
+            delta += 1000;
         }
         // else if (W < M * delta)
         else if (W < M * sbfd) // change for period and budget
@@ -678,7 +685,7 @@ struct timeval MPCController::do_partial_cd_analysis(std::vector<std::shared_ptr
     auto k = root_chain->getChainID(); // we want to do a partial analysis on the root chain
     double delta = 1;
     auto E_k = 1;
-    auto MSG_DELAY = 500, QUEUE_DELAY = 0;
+    auto MSG_DELAY = 200, QUEUE_DELAY = 0;
     auto response_time = 0.0;
     bool nonlinear_cb = true;
     for (auto &callback : root_chain->getCallbacks())
@@ -700,6 +707,10 @@ struct timeval MPCController::do_partial_cd_analysis(std::vector<std::shared_ptr
         // for each interfering chain in the same chainset
         for (auto &interf_chain : chainset)
         {
+            if (!this->exec->is_running())
+            {
+                break;
+            }
             // if the interfering chain is not the same as the current chain
             if (interf_chain != chain)
             {
@@ -851,7 +862,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
     // M is the number of threads in the threadclass * the total budget (per thread)
     // double M = tg->threads.size() * (double)tg->total_budget / 10000;
 
-    auto MSG_DELAY = 500;
+    auto MSG_DELAY = 200;
     auto QUEUE_DELAY = 0;
     double M = (double)tg->threads.size(); //* (double)budget / (double)THREAD_PERIOD;
     int k = 0;
@@ -952,10 +963,12 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
 
             // std::cout << "Performing partial analysis on chain: " << chain->getChainID() << " with root callback: " << nl_cb_ptr->getName() << std::endl;
             struct timeval root_time;
-            if (partial_chain->get_branch_rt(0) || tg->chain_response_times.size() == 0){
+            if (partial_chain->get_branch_rt(0) || tg->chain_response_times.size() == 0)
+            {
                 root_time = do_partial_cd_analysis(partial_chainset, tg, budget, partial_chain, nl_cb_ptr);
             }
-            else{
+            else
+            {
                 root_time = do_partial_ad_analysis(partial_chainset, tg, budget, partial_chain, nl_cb_ptr);
             }
             // std::cout << "Partial analysis resulted in a partial chain response time of: " << root_time.tv_sec * 1e6 + root_time.tv_usec << std::endl;
@@ -989,6 +1002,10 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
             // for each interfering chain in the same chainset
             for (auto &interf_chain : chainset)
             {
+                if (!this->exec->is_running())
+                {
+                    break;
+                }
                 // if the interfering chain is not the same as the current chain
                 if (interf_chain != chain)
                 {
@@ -1142,7 +1159,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                 if (delta <= delta_prev)
                 {
                     // delta = delta_prev + 1;
-                    delta = delta_prev + 100;
+                    delta = delta_prev + 200;
                     // delta += std::floor(W/M);
                 }
             }
@@ -1200,7 +1217,7 @@ out:
 std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget)
 {
 
-    auto MSG_DELAY = 500;
+    auto MSG_DELAY = 200;
     auto QUEUE_DELAY = 0;
     double M = (double)tg->threads.size();
     int k = 0;
@@ -1285,10 +1302,12 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
 
             // std::cout << "Performing partial analysis on chain: " << chain->getChainID() << " with root callback: " << nl_cb_ptr->getName() << std::endl;
             struct timeval root_time;
-            if (partial_chain->get_branch_rt(0)){
+            if (partial_chain->get_branch_rt(0))
+            {
                 root_time = do_partial_cd_analysis(partial_chainset, tg, budget, partial_chain, nl_cb_ptr);
             }
-            else{
+            else
+            {
                 root_time = do_partial_ad_analysis(partial_chainset, tg, budget, partial_chain, nl_cb_ptr);
             }
 
@@ -1303,6 +1322,10 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
             {
                 // if (interf_chain != chain)
                 {
+                    if (!this->exec->is_running())
+                    {
+                        break;
+                    }
                     auto T = interf_chain->getPeriod().tv_sec * 1e6 + interf_chain->getPeriod().tv_usec;
                     auto D = 2 * T; // interf_chain->getDeadline().tv_sec * 1e6 + interf_chain->getDeadline().tv_usec;
                     auto C = 0;
@@ -1422,7 +1445,7 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
                 delta = 1 + std::floor(W / M);
                 if (delta <= delta_prev)
                 {
-                    delta = delta_prev + 100;
+                    delta = delta_prev + 200;
                 }
             }
         }

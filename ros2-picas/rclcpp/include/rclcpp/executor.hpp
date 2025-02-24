@@ -665,8 +665,8 @@ protected:
    */
   RCLCPP_PUBLIC
   void
-  wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(0));
-  //wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
+  wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(-1));
+  //wait_for_work(std::chrono::nanoseconds timeout = std::chrono::nanoseconds(0));
 
   RCLCPP_PUBLIC
   rclcpp::node_interfaces::NodeBaseInterface::SharedPtr
