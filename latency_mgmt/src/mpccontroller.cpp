@@ -2,16 +2,32 @@
 #define MPC_CONTROLLER_CPP
 
 #include <mpccontroller.hpp>
-// #define THREAD_PERIOD 10000000 // 10ms
-// #define THREAD_PERIOD_US 10000 // 10ms
-#define THREAD_PERIOD 5000000 // 5ms
-#define THREAD_PERIOD_US 5000 // 5ms
-#define US_OFFSET 5120
-#define NS_IN_US 1000
-// #define THREAD_PERIOD_US 1000
-// #define THREAD_PERIOD 1000000 // 1ms
-// #define US_OFFSET 10240
+// #define THREAD_PERIOD 1000000000 // 1s
+// #define THREAD_PERIOD_US 1000000 // 1s
+// #define US_OFFSET 1002400        // 1s
+// #define THREAD_PERIOD 500000000 // 500ms
+// #define THREAD_PERIOD_US 500000 // 500ms
+// #define US_OFFSET 502400        // 500ms
+// #define THREAD_PERIOD 100000000 // 100ms
+// #define THREAD_PERIOD_US 100000 // 100ms
+// #define US_OFFSET 102400        // 100ms
+// #define THREAD_PERIOD 50000000  // 50ms
+// #define THREAD_PERIOD_US 50000  // 50ms
+// #define US_OFFSET 51200         // 50ms
+// #define THREAD_PERIOD 20000000  // 20ms
+// #define THREAD_PERIOD_US 20000  // 20ms
+// #define US_OFFSET 20480         // 20ms
+// #define THREAD_PERIOD 10000000     // 10ms
+// #define THREAD_PERIOD_US 10000     // 10ms
+// #define US_OFFSET 10240            // 10ms
+#define THREAD_PERIOD 5000000   // 5ms
+#define THREAD_PERIOD_US 5000   // 5ms
+#define US_OFFSET 5120          // 5ms
+// #define THREAD_PERIOD 1000000   // 1ms
+// #define THREAD_PERIOD_US 1000   // 1ms
+// #define US_OFFSET 1024          // 1ms
 
+#define NS_IN_US 1000
 MPCController::MPCController()
 {
     int threadpool_size = 4;
@@ -270,9 +286,9 @@ void MPCController::run()
     bool first_run = true;
     do
     {
-        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+        //clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
         bool realloc = false;
-        // gettimeofday(&start_time, NULL);
+        gettimeofday(&start_time, NULL);
         //  Get the current state from the executor
         // Create a new state for the next prediction
         unsigned int analysis_count = 0;
@@ -343,10 +359,10 @@ void MPCController::run()
             }
         }
 
-        // gettimeofday(&end_time, NULL);
-        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
-        timespec_to_timeval(&start, &start_time);
-        timespec_to_timeval(&end, &end_time);
+        gettimeofday(&end_time, NULL);
+        //clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+        //timespec_to_timeval(&start, &start_time);
+        //timespec_to_timeval(&end, &end_time);
         timersub(&end_time, &start_time, &end_time);
 
         std::cout << "Controller activation time: " << end_time.tv_sec * 1e6 + end_time.tv_usec << " us. Number of times analysis was performed: " << analysis_count << std::endl;
@@ -502,7 +518,7 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
     auto k = root_chain->getChainID(); // we want to do a partial analysis on the root chain
     double delta = 1;
     auto E_k = 1;
-    auto MSG_DELAY = 200, QUEUE_DELAY = 0;
+    auto MSG_DELAY=500, QUEUE_DELAY = 0;
     auto response_time = 0.0;
     bool nonlinear_cb = true;
     for (auto &callback : root_chain->getCallbacks())
@@ -646,7 +662,7 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
             k++;
             break;
         }
-        else if (delta > (double)(20000000))
+        else if (delta > (double)(10000000))
         { // higher limit
             // not schedulable
             response_time = 20e6;
@@ -685,7 +701,7 @@ struct timeval MPCController::do_partial_cd_analysis(std::vector<std::shared_ptr
     auto k = root_chain->getChainID(); // we want to do a partial analysis on the root chain
     double delta = 1;
     auto E_k = 1;
-    auto MSG_DELAY = 200, QUEUE_DELAY = 0;
+    auto MSG_DELAY=500, QUEUE_DELAY = 0;
     auto response_time = 0.0;
     bool nonlinear_cb = true;
     for (auto &callback : root_chain->getCallbacks())
@@ -825,7 +841,7 @@ struct timeval MPCController::do_partial_cd_analysis(std::vector<std::shared_ptr
             k++;
             break;
         }
-        else if (delta > (double)(20000000))
+        else if (delta > (double)(10000000))
         { // higher limit
             // not schedulable
             response_time = 20e6;
@@ -862,7 +878,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
     // M is the number of threads in the threadclass * the total budget (per thread)
     // double M = tg->threads.size() * (double)tg->total_budget / 10000;
 
-    auto MSG_DELAY = 200;
+    auto MSG_DELAY=500;
     auto QUEUE_DELAY = 0;
     double M = (double)tg->threads.size(); //* (double)budget / (double)THREAD_PERIOD;
     int k = 0;
@@ -1127,7 +1143,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                 k++;
                 break;
             }
-            else if (delta > (double)(20000000))
+            else if (delta > (double)(10000000))
             { // higher limit
                 // not schedulable
                 response_times[k] = 20e6;
@@ -1217,7 +1233,7 @@ out:
 std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Chain>> chainset, std::shared_ptr<threadclass> tg, int budget)
 {
 
-    auto MSG_DELAY = 200;
+    auto MSG_DELAY=500;
     auto QUEUE_DELAY = 0;
     double M = (double)tg->threads.size();
     int k = 0;
@@ -1426,7 +1442,7 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
                 k++;
                 break;
             }
-            else if (delta > (double)(20000000))
+            else if (delta > (double)(10000000))
             {
                 response_times[k] = 20e6;
                 k++;
@@ -1438,7 +1454,7 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
                 count++;
                 if (count % 1000 == 0)
                 {
-                    std::cerr << "Chain ID: " << chain->getChainID() << " processed 1000 iterations with bad current delta: " << delta << std::endl;
+                    //std::cerr << "Chain ID: " << chain->getChainID() << " processed 1000 iterations with bad current delta: " << delta << std::endl;
                     count = 0;
                 }
                 auto delta_prev = delta;
@@ -1463,10 +1479,10 @@ out_ad:
         {
             if (cb->branch_root_cb != nullptr)
             {
-                std::cerr << "Chain: " << chain->getChainID() << " is a subchain of a larger chain" << std::endl;
+                //std::cerr << "Chain: " << chain->getChainID() << " is a subchain of a larger chain" << std::endl;
                 subchain = true;
                 root_rt = cb->branch_root_cb->root_rt;
-                std::cerr << "Root RT: " << root_rt.tv_sec * 1e6 + root_rt.tv_usec << std::endl;
+                //std::cerr << "Root RT: " << root_rt.tv_sec * 1e6 + root_rt.tv_usec << std::endl;
                 break;
             }
         }

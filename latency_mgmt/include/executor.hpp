@@ -87,6 +87,8 @@ public:
     void assign_cv(std::shared_ptr<std::condition_variable> cv_ptr, std::shared_ptr<std::mutex> mtx_ptr);
     void add_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group, std::shared_ptr<Callback> node,  int id);
     void add_chain_cb_group(std::shared_ptr<rclcpp::CallbackGroup> group, std::shared_ptr<Chain> chain);
+    void split_chains();
+    
 
 private:
     std::shared_ptr<std::condition_variable> cv_ptr;

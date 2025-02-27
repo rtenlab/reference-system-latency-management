@@ -10,12 +10,33 @@
 #include <stdio.h>
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
-#define THREAD_PERIOD 5000000 // 5ms
-#define THREAD_PERIOD_US 5000 // 5ms
-#define US_OFFSET 5120
-//#define THREAD_PERIOD 10000000 // 10ms
-//#define THREAD_PERIOD 1000000 // 1ms
-//#define US_OFFSET 10240
+
+
+// #define THREAD_PERIOD 1000000000 // 1s
+// #define THREAD_PERIOD_US 1000000 // 1s
+// #define US_OFFSET 1002400        // 1s
+// #define THREAD_PERIOD 500000000 // 500ms
+// #define THREAD_PERIOD_US 500000 // 500ms
+// #define US_OFFSET 502400        // 500ms
+// #define THREAD_PERIOD 100000000 // 100ms
+// #define THREAD_PERIOD_US 100000 // 100ms
+// #define US_OFFSET 102400        // 100ms
+// #define THREAD_PERIOD 50000000  // 50ms
+// #define THREAD_PERIOD_US 50000  // 50ms
+// #define US_OFFSET 51200         // 50ms
+// #define THREAD_PERIOD 20000000  // 20ms
+// #define THREAD_PERIOD_US 20000  // 20ms
+// #define US_OFFSET 20480         // 20ms
+// #define THREAD_PERIOD 10000000     // 10ms
+// #define THREAD_PERIOD_US 10000     // 10ms
+// #define US_OFFSET 10240            // 10ms
+#define THREAD_PERIOD 5000000   // 5ms
+#define THREAD_PERIOD_US 5000   // 5ms
+#define US_OFFSET 5120          // 5ms
+// #define THREAD_PERIOD 1000000   // 1ms
+// #define THREAD_PERIOD_US 1000   // 1ms
+// #define US_OFFSET 1024          // 1ms
+
 std::vector<executor *> executor::instances;
 
 #define LOGGER(fmt, ...) RCLCPP_INFO(rclcpp::get_logger("picas"), fmt, ##__VA_ARGS__)
@@ -297,6 +318,33 @@ std::vector<std::vector<std::shared_ptr<Chain>>> executor::parse_and_sort_chains
     sorted_chains.push_back(sorted_rt_chains);
     sorted_chains.push_back(sorted_be_chains);
     return sorted_chains;
+}
+
+void executor::split_chains()
+{
+    std::vector<std::vector<std::shared_ptr<Chain>>> sorted_chains = parse_and_sort_chains(&chains);
+    this->sorted_rt_chains = sorted_chains[0];
+    this->sorted_be_chains = sorted_chains[1];
+    chains.resize(0);
+    for (auto &chain : sorted_rt_chains)
+    {
+        chains.push_back(chain);
+        for (auto &callback : chain->getCallbacks())
+        {
+            callback->setPriority(0);
+            callback->setPriorityScheduling(false);
+        }
+    }
+    for (auto &chain : sorted_be_chains)
+    {
+        chains.push_back(chain);
+        for (auto &callback : chain->getCallbacks())
+        {
+            callback->setPriority(0);
+            callback->setPriorityScheduling(false);
+        }
+    }
+    this->print_chains_and_callbacks();
 }
 
 void executor::set_callback_priorities()
@@ -789,12 +837,12 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
             auto thing = is_rt_thread ? "RT" : "BE";
             int dbg_tid = thread_id % number_of_threads_;
             nvtxRangeId_t range_id = nvtxRangeStartA(string_format("%s Thread %i getting lock", thing, dbg_tid).c_str());
-            //std::lock_guard wait_lock{wait_mutex_};
+            // std::lock_guard wait_lock{wait_mutex_};
             wait_mutex_.lock();
             nvtxRangeEnd(range_id);
 
             PICAS_INFO("[run] thread %lu", thread_id);
-            //std::lock_guard wait_lock{wait_mutex_};
+            // std::lock_guard wait_lock{wait_mutex_};
             {
                 int dbg_tid = thread_id % number_of_threads_;
                 NvtxScopedRange r(string_format("%s Thread %i holding lock", thing, dbg_tid));
@@ -805,7 +853,7 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
                     return;
                 }
                 if (!get_next_executable_unlocked(any_exec, next_exec_timeout_, &wait_mutex_))
-                //if (!get_next_executable_unlocked(any_exec, std::chrono::nanoseconds(0), &wait_mutex_))
+                // if (!get_next_executable_unlocked(any_exec, std::chrono::nanoseconds(0), &wait_mutex_))
                 {
                     wait_mutex_.unlock();
                     continue;
