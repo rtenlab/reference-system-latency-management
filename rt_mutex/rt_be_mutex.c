@@ -10,8 +10,13 @@
 #include <linux/cdev.h>
 #include <linux/preempt.h>
 #include <linux/irqflags.h>
+#include <linux/rtmutex.h>
+#include <linux/sched/deadline.h>
+#include <linux/tracepoint.h>
+#include <linux/module.h>
 
-#define NO_SLEEP_FLAG PF_NOFREEZE // Using an existing "unused" flag
+static DEFINE_RT_MUTEX(test_rt_mutex);
+
 
 #define DEVICE_NAME "rt_be_mutex"
 #define IOCTL_LOCK _IOW('r', 1, int)
@@ -28,9 +33,11 @@ static struct semaphore sem;
 struct rt_be_mutex
 {
     pid_t owner;
-    bool preempt_active;
-    struct list_head rt_queue;
-    struct list_head be_queue;
+    bool is_boosted;
+    struct list_head wait_queue;  // Single queue instead of rt_queue & be_queue
+
+    //struct list_head rt_queue;
+    //struct list_head be_queue;
 };
 
 struct task_node
@@ -41,13 +48,120 @@ struct task_node
 
 static struct rt_be_mutex my_mutex;
 
+
+static void boost_task(struct task_struct *task)
+{
+    // Only boost if this is a deadline task
+    if (task->policy == SCHED_DEADLINE) {
+        task_lock(task);
+        // Direct access to dl_boosted field
+        task->dl.dl_non_preemptible = 1;
+        printk(KERN_INFO "rt_be_mutex: Boosting task %d\n", task->pid);
+        task_unlock(task);
+    }
+}
+
+static void unboost_task(struct task_struct *task)
+{
+    if (task->policy == SCHED_DEADLINE) {
+        task_lock(task);
+        task->dl.dl_non_preemptible = 0;
+        printk(KERN_INFO "rt_be_mutex: Unboosting task %d\n", task->pid);
+        task_unlock(task);
+    }
+}
+
 static void init_rt_be_mutex(struct rt_be_mutex *mutex)
 {
     mutex->owner = -1;
-    INIT_LIST_HEAD(&mutex->rt_queue);
-    INIT_LIST_HEAD(&mutex->be_queue);
+    INIT_LIST_HEAD(&mutex->wait_queue);
 }
 
+static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
+{
+    struct task_node *node;
+
+    down(&sem);
+
+    if (mutex->owner == -1)
+    {
+        mutex->owner = current->pid;
+
+        if (!mutex->is_boosted)
+        {
+            boost_task(current);
+            mutex->is_boosted = true;
+        }
+
+        printk(KERN_INFO "rt_be_mutex: Thread %d acquired lock.\n", current->pid);
+        up(&sem);
+        return 0;
+    }
+
+    // Lock is busy, enqueue in single FIFO queue
+    node = kmalloc(sizeof(*node), GFP_KERNEL);
+    if (!node)
+    {
+        up(&sem);
+        return -ENOMEM;
+    }
+    node->task = current;
+    
+    // Add to single wait queue
+    list_add_tail(&node->list, &mutex->wait_queue);
+
+    printk(KERN_INFO "rt_be_mutex: Thread %d queued for lock\n", current->pid);
+
+    set_current_state(TASK_UNINTERRUPTIBLE);
+    up(&sem);
+
+    schedule();
+
+    return 0;
+}
+
+static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
+{
+    struct task_node *next_task;
+
+    down(&sem);
+
+    if (mutex->owner != current->pid)
+    {
+        up(&sem);
+        return -EPERM;
+    }
+
+    mutex->owner = -1;
+
+    if (mutex->is_boosted)
+    {
+        unboost_task(current);
+        mutex->is_boosted = false;
+    }
+
+    printk(KERN_INFO "rt_be_mutex: Thread %d released lock.\n", current->pid);
+
+    // Check single wait queue
+    if (!list_empty(&mutex->wait_queue))
+    {
+        next_task = list_first_entry(&mutex->wait_queue, struct task_node, list);
+        list_del(&next_task->list);
+        mutex->owner = next_task->task->pid;
+        boost_task(next_task->task);
+        mutex->is_boosted = true;
+        wake_up_process(next_task->task);
+
+        kfree(next_task);
+    }
+    else{
+        printk(KERN_INFO "rt_be_mutex: No waiters in queue.\n");
+    }
+    
+    up(&sem);
+    return 0;
+}
+/*
 static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
 {
     struct task_node *node;
@@ -59,11 +173,11 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
     {
         mutex->owner = current->pid;
 
-        // Only disable preemption if it’s not already disabled
-        if (!mutex->preempt_active)
+        // Boost the task instead of disabling preemption
+        if (!mutex->is_boosted)
         {
-            preempt_disable();
-            mutex->preempt_active = true;
+            boost_task(current);
+            mutex->is_boosted = true;
         }
 
         printk(KERN_INFO "rt_be_mutex: Thread %d acquired lock.\n", current->pid);
@@ -114,14 +228,15 @@ static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
 
     mutex->owner = -1;
 
-    // Match the disable from lock
-    if (mutex->preempt_active)
+    // Unboost the task instead of enabling preemption
+    if (mutex->is_boosted)
     {
-        preempt_enable();
-        mutex->preempt_active = false;
+        unboost_task(current);
+        mutex->is_boosted = false;
     }
 
     printk(KERN_INFO "rt_be_mutex: Thread %d released lock.\n", current->pid);
+
 
     // Check RT queue first, then BE queue
     if (!list_empty(&mutex->rt_queue))
@@ -147,11 +262,11 @@ static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
     wake_up_process(next_task->task);
 
     kfree(next_task);
-
     up(&sem);
+
     return 0;
 }
-
+*/
 static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     int task_type;
@@ -181,7 +296,38 @@ static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         return -EINVAL;
     }
 }
+static int dev_release(struct inode *inode, struct file *file)
+{
+    struct task_node *node;
+    struct list_head *pos, *n;
 
+    down(&sem);
+
+    // If closing process owns the lock, unlock normally
+    if (my_mutex.owner == current->pid)
+    {
+        printk(KERN_INFO "rt_be_mutex: Process %d closed FD while owning lock, forcing unlock.\n",
+               current->pid);
+        rt_be_mutex_unlock(&my_mutex);
+    }
+    
+    // Remove leftover queue entries from this process
+    list_for_each_safe(pos, n, &my_mutex.wait_queue)
+    {
+        node = list_entry(pos, struct task_node, list);
+        if (node->task->tgid == current->tgid)
+        {
+            list_del(pos);
+            wake_up_process(node->task);
+            kfree(node);
+        }
+    }
+
+    up(&sem);
+    return 0;
+}
+
+/*
 static int dev_release(struct inode *inode, struct file *file)
 {
     struct task_node *node, *tmp;
@@ -196,7 +342,7 @@ static int dev_release(struct inode *inode, struct file *file)
                current->pid);
         rt_be_mutex_unlock(&my_mutex);
     }
-
+    //down(&sem);
     // Remove leftover queue entries from this process
     list_for_each_safe(pos, n, &my_mutex.rt_queue)
     {
@@ -222,7 +368,7 @@ static int dev_release(struct inode *inode, struct file *file)
     up(&sem);
     return 0;
 }
-
+*/
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .unlocked_ioctl = dev_ioctl,
@@ -274,29 +420,21 @@ static int __init rt_be_mutex_init(void)
     printk(KERN_INFO "rt_be_mutex: Module loaded, major=%d\n", MAJOR(dev_number));
     return 0;
 }
-
 static void cleanup_all_waiters(void)
 {
     struct list_head *pos, *n;
     struct task_node *node;
 
     down(&sem);
-    // Clear RT queue
-    list_for_each_safe(pos, n, &my_mutex.rt_queue)
+    // Clear the single wait queue
+    list_for_each_safe(pos, n, &my_mutex.wait_queue)
     {
         node = list_entry(pos, struct task_node, list);
         list_del(pos);
         wake_up_process(node->task);
         kfree(node);
     }
-    // Clear BE queue
-    list_for_each_safe(pos, n, &my_mutex.be_queue)
-    {
-        node = list_entry(pos, struct task_node, list);
-        list_del(pos);
-        wake_up_process(node->task);
-        kfree(node);
-    }
+    
     // Force unlock if still owned
     if (my_mutex.owner != -1)
     {
@@ -305,6 +443,36 @@ static void cleanup_all_waiters(void)
     }
     up(&sem);
 }
+// static void cleanup_all_waiters(void)
+// {
+//     struct list_head *pos, *n;
+//     struct task_node *node;
+
+//     down(&sem);
+//     // Clear RT queue
+//     list_for_each_safe(pos, n, &my_mutex.rt_queue)
+//     {
+//         node = list_entry(pos, struct task_node, list);
+//         list_del(pos);
+//         wake_up_process(node->task);
+//         kfree(node);
+//     }
+//     // Clear BE queue
+//     list_for_each_safe(pos, n, &my_mutex.be_queue)
+//     {
+//         node = list_entry(pos, struct task_node, list);
+//         list_del(pos);
+//         wake_up_process(node->task);
+//         kfree(node);
+//     }
+//     // Force unlock if still owned
+//     if (my_mutex.owner != -1)
+//     {
+//         printk(KERN_WARNING "Force-unlocking. Owner=%d\n", my_mutex.owner);
+//         rt_be_mutex_unlock(&my_mutex);
+//     }
+//     up(&sem);
+// }
 
 static void __exit rt_be_mutex_exit(void)
 {
@@ -316,9 +484,11 @@ static void __exit rt_be_mutex_exit(void)
     printk(KERN_INFO "rt_be_mutex: Module unloaded\n");
 }
 
+EXPORT_SYMBOL(rt_be_mutex_lock);
+EXPORT_SYMBOL(rt_be_mutex_unlock);
 module_init(rt_be_mutex_init);
 module_exit(rt_be_mutex_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
-MODULE_DESCRIPTION("RT-BE Mutex Module without interrupt disable.");
+MODULE_AUTHOR("Daniel Enright");
+MODULE_DESCRIPTION("RT-BE Mutex Module for LaME ROS 2 Executor.");

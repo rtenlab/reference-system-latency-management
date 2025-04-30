@@ -27,12 +27,12 @@
 // #define THREAD_PERIOD 20000000  // 20ms
 // #define THREAD_PERIOD_US 20000  // 20ms
 // #define US_OFFSET 20480         // 20ms
-// #define THREAD_PERIOD 10000000     // 10ms
-// #define THREAD_PERIOD_US 10000     // 10ms
-// #define US_OFFSET 10240            // 10ms
-#define THREAD_PERIOD 5000000   // 5ms
-#define THREAD_PERIOD_US 5000   // 5ms
-#define US_OFFSET 5120          // 5ms
+#define THREAD_PERIOD 10000000     // 10ms
+#define THREAD_PERIOD_US 10000     // 10ms
+#define US_OFFSET 10240            // 10ms
+// #define THREAD_PERIOD 5000000   // 5ms
+// #define THREAD_PERIOD_US 5000   // 5ms
+// #define US_OFFSET 5120          // 5ms
 // #define THREAD_PERIOD 1000000   // 1ms
 // #define THREAD_PERIOD_US 1000   // 1ms
 // #define US_OFFSET 1024          // 1ms

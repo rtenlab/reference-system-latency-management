@@ -687,7 +687,9 @@ void test_case_2()
     chain_criticalities8.push_back(0);
     chain_criticalities8.push_back(0);
     chain14_15->setPriorities(chain_criticalities8);
+    
 
+    
     ex.add_chain(chain1_2);
     ex.add_chain(chain3_4);
     ex.add_chain(chain5_6);
