@@ -220,7 +220,8 @@ private:
     std::unordered_map<int, std::deque<struct timeval>> branch_timestamps;
     std::shared_ptr<Chain> chain;
     std::deque<struct timeval> non_state_aware_ex_time_history;
-    ordered_mutex execution_history_mutex_;
+    //ordered_mutex execution_history_mutex_;
+    std::mutex execution_history_mutex_;
     std::mutex timer_mutex_;
 
 

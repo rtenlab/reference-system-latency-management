@@ -13,3 +13,4 @@ scripts/.test/
 test_mutex
 *.symvers
 *.order
+*.o.d
