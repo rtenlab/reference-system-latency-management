@@ -7,70 +7,179 @@
 
 #include <thread.hpp>
 #include <stdio.h>
+#include <sys/stat.h>
+
 
 // NVTX DEBUG
 #include <nvtx3/nvToolsExt.h>  // sometimes needed
 #define sched_setattr(pid, attr, flags) syscall(__NR_sched_setattr, pid, attr, flags)
 #define sched_getattr(pid, attr, size, flags) syscall(__NR_sched_getattr, pid, attr, size, flags)
+// Add these functions at the appropriate place in your thread.cpp file
 
-void executor_thread::create_cgroup(const std::string &cgroup_name, const std::string &cpus)
-{
+bool is_cgroupv2_available() {
+    struct stat st;
+    // Use :: to ensure we're calling the global stat function, not the struct name
+    return (::stat("/sys/fs/cgroup/cgroup.controllers", &st) == 0);
+}
+
+void executor_thread::create_cgroup(const std::string &cgroup_name, const std::string &cpus) {
+    // Check which cgroups version is available
+    bool using_cgroupv2 = is_cgroupv2_available();
+    std::string cgroup_path;
     std::ofstream cg_file;
-    std::string cgroup_path = "/sys/fs/cgroup/cpuset/" + cgroup_name;
+    
+    if (using_cgroupv2) {
+        // cgroups v2 path
+        cgroup_path = "/sys/fs/cgroup/" + cgroup_name;
+    } else {
+        // cgroups v1 path
+        cgroup_path = "/sys/fs/cgroup/cpuset/" + cgroup_name;
+    }
 
     // Create cgroup directory
     std::system(("sudo mkdir -p " + cgroup_path).c_str());
+    
+    if (using_cgroupv2) {
+        // Enable cpuset controller in parent directory
+        std::ofstream parent_file("/sys/fs/cgroup/cgroup.subtree_control");
+        if (parent_file.is_open()) {
+            parent_file << "+cpuset";
+            parent_file.close();
+        }
+        
+        // Write CPU list to cpuset.cpus (v2 uses 'cpuset.cpus' instead of 'cpus')
+        cg_file.open(cgroup_path + "/cpuset.cpus");
+        if (!cg_file.is_open()) {
+            std::cerr << "Failed to open cgroup file for cpuset.cpus (v2)" << std::endl;
+            return;
+        }
+        cg_file << cpus;
+        cg_file.close();
+        
+        // Set memory nodes
+        cg_file.open(cgroup_path + "/cpuset.mems");
+        if (!cg_file.is_open()) {
+            std::cerr << "Failed to open cgroup file for cpuset.mems (v2)" << std::endl;
+            return;
+        }
+        cg_file << "0";
+        cg_file.close();
+    } else {
+        // cgroups v1 approach
+        cg_file.open(cgroup_path + "/cpuset.cpus");
+        if (!cg_file.is_open()) {
+            std::cerr << "Failed to open cgroup file for cpuset.cpus" << std::endl;
+            return;
+        }
+        cg_file << cpus;
+        cg_file.close();
 
-    // Write the list of allowed CPUs to cpuset.cpus
-    cg_file.open(cgroup_path + "/cpuset.cpus");
-    if (!cg_file.is_open())
-    {
-        std::cerr << "Failed to open cgroup file for cpuset.cpus" << std::endl;
-        return;
+        cg_file.open(cgroup_path + "/cpuset.mems");
+        if (!cg_file.is_open()) {
+            std::cerr << "Failed to open cgroup file for cpuset.mems" << std::endl;
+            return;
+        }
+        cg_file << "0";
+        cg_file.close();
+
+        cg_file.open(cgroup_path + "/cpuset.cpu_exclusive");
+        if (!cg_file.is_open()) {
+            std::cerr << "Failed to open cgroup file for cpu_exclusive" << std::endl;
+            return;
+        }
+        cg_file << "0";
+        cg_file.close();
     }
-    cg_file << cpus; // Specify the CPU(s) to bind the cgroup to (e.g., "0" for core 0, "0-3" for cores 0 to 3)
-    cg_file.close();
 
-    // // Enable memory/memory nodes to make cpuset controller valid
-    cg_file.open(cgroup_path + "/cpuset.mems");
-    if (!cg_file.is_open())
-    {
-        std::cerr << "Failed to open cgroup file for cpuset.mems" << std::endl;
-        return;
-    }
-    cg_file << "0"; // By default, assign to memory node 0
-    cg_file.close();
-
-    cg_file.open(cgroup_path + "/cpuset.cpu_exclusive");
-    if (!cg_file.is_open())
-    {
-        std::cerr << "Failed to open cgroup file for cpu_exclusive" << std::endl;
-        return;
-    }
-    cg_file << "0"; // By default, do not use exclusive CPUs
-    cg_file.close();
-
-    std::cout << "Cgroup " << cgroup_name << " created and bound to CPU(s): " << cpus << std::endl;
+    std::cout << "Cgroup " << cgroup_name << " created and bound to CPU(s): " << cpus 
+              << " using " << (using_cgroupv2 ? "cgroupsv2" : "cgroupsv1") << std::endl;
 }
 
-// Function to add a process/thread to a cgroup
-void executor_thread::add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid)
-{
+void executor_thread::add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid) {
     std::ofstream cg_file;
-    // std::string cgroup_tasks_path = "/sys/fs/cgroup/cpuset/" + cgroup_name + "/cgroup.procs";
-    std::string cgroup_tasks_path = "/sys/fs/cgroup/cpuset/" + cgroup_name + "/tasks";
-    // Add thread to the cgroup by writing to cgroup.procs
-    cg_file.open(cgroup_tasks_path);
-    if (!cg_file.is_open())
-    {
-        std::cerr << "Failed to open cgroup tasks file" << std::endl;
+    bool using_cgroupv2 = is_cgroupv2_available();
+    std::string cgroup_path;
+    std::string proc_file;
+    
+    if (using_cgroupv2) {
+        cgroup_path = "/sys/fs/cgroup/" + cgroup_name;
+        proc_file = "/cgroup.procs"; // v2 uses cgroup.procs
+    } else {
+        cgroup_path = "/sys/fs/cgroup/cpuset/" + cgroup_name;
+        proc_file = "/tasks"; // v1 uses tasks
+    }
+    
+    // Try both files (tasks for v1, cgroup.procs for v2)
+    cg_file.open(cgroup_path + proc_file);
+    if (!cg_file.is_open()) {
+        std::cerr << "Failed to open cgroup " << proc_file << " file" << std::endl;
         return;
     }
+    
     cg_file << tid;
     cg_file.close();
 
-    std::cout << "Thread with TID " << tid << " added to cgroup " << cgroup_name << std::endl;
+    std::cout << "Thread with TID " << tid << " added to cgroup " << cgroup_name 
+              << " using " << (using_cgroupv2 ? "cgroupsv2" : "cgroupsv1") << std::endl;
 }
+// void executor_thread::create_cgroup(const std::string &cgroup_name, const std::string &cpus)
+// {
+//     std::ofstream cg_file;
+//     std::string cgroup_path = "/sys/fs/cgroup/cpuset/" + cgroup_name;
+
+//     // Create cgroup directory
+//     std::system(("sudo mkdir -p " + cgroup_path).c_str());
+
+//     // Write the list of allowed CPUs to cpuset.cpus
+//     cg_file.open(cgroup_path + "/cpuset.cpus");
+//     if (!cg_file.is_open())
+//     {
+//         std::cerr << "Failed to open cgroup file for cpuset.cpus" << std::endl;
+//         return;
+//     }
+//     cg_file << cpus; // Specify the CPU(s) to bind the cgroup to (e.g., "0" for core 0, "0-3" for cores 0 to 3)
+//     cg_file.close();
+
+//     // // Enable memory/memory nodes to make cpuset controller valid
+//     cg_file.open(cgroup_path + "/cpuset.mems");
+//     if (!cg_file.is_open())
+//     {
+//         std::cerr << "Failed to open cgroup file for cpuset.mems" << std::endl;
+//         return;
+//     }
+//     cg_file << "0"; // By default, assign to memory node 0
+//     cg_file.close();
+
+//     cg_file.open(cgroup_path + "/cpuset.cpu_exclusive");
+//     if (!cg_file.is_open())
+//     {
+//         std::cerr << "Failed to open cgroup file for cpu_exclusive" << std::endl;
+//         return;
+//     }
+//     cg_file << "0"; // By default, do not use exclusive CPUs
+//     cg_file.close();
+
+//     std::cout << "Cgroup " << cgroup_name << " created and bound to CPU(s): " << cpus << std::endl;
+// }
+
+// // Function to add a process/thread to a cgroup
+// void executor_thread::add_thread_to_cgroup(const std::string &cgroup_name, pid_t tid)
+// {
+//     std::ofstream cg_file;
+//     // std::string cgroup_tasks_path = "/sys/fs/cgroup/cpuset/" + cgroup_name + "/cgroup.procs";
+//     std::string cgroup_tasks_path = "/sys/fs/cgroup/cpuset/" + cgroup_name + "/tasks";
+//     // Add thread to the cgroup by writing to cgroup.procs
+//     cg_file.open(cgroup_tasks_path);
+//     if (!cg_file.is_open())
+//     {
+//         std::cerr << "Failed to open cgroup tasks file" << std::endl;
+//         return;
+//     }
+//     cg_file << tid;
+//     cg_file.close();
+
+//     std::cout << "Thread with TID " << tid << " added to cgroup " << cgroup_name << std::endl;
+// }
 
 #ifdef PICAS_THREAD_AFFINITY
 executor_thread::executor_thread(ordered_mutex *wait_mutex, executor *exec, int logical_thread_id)
@@ -277,31 +386,14 @@ int get_first_cpu_from_set(const cpu_set_t *cpu_set)
     }
     return -1; // If no CPUs are set, return -1
 }
-
 void executor_thread::set_affinity(cpu_set_t cpuSet, bool rt)
 {
-    // if (CPU_EQUAL(&cpuSet, &this->cpuSet))
-    // {
-    //     return;
-    // }
     this->cpuSet = cpuSet;
-    // sched_setaffinity(threadID, sizeof(cpu_set_t), &cpuSet);
     std::stringstream thread_name_stream;
     std::stringstream cpu_core_stream;
 
     thread_name_stream << "CPU_CG_" << get_first_cpu_from_set(&cpuSet);
-    // Format the thread name and CPU core using stringstream
-    // if (rt)
-    // {
-    //     thread_name_stream << "RT_Thread_" << get_first_cpu_from_set(&cpuSet);
-    // }
-    // else
-    // {
-    //     thread_name_stream << "BE_Thread_" << get_first_cpu_from_set(&cpuSet);
-    // }
     cpu_core_stream << get_first_cpu_from_set(&cpuSet);
-
-    // Convert stringstream to string and call create_cgroup with the results
 
     // if sched deadline policy, set affinity using cgroups
     if (policy == SCHED_DEADLINE)
@@ -313,7 +405,48 @@ void executor_thread::set_affinity(cpu_set_t cpuSet, bool rt)
         // Add thread to cgroup
         add_thread_to_cgroup(thread_name.c_str(), threadID);
     }
+    else {
+        // For non-DEADLINE policies, use traditional sched_setaffinity
+        sched_setaffinity(threadID, sizeof(cpu_set_t), &cpuSet);
+    }
 }
+// void executor_thread::set_affinity(cpu_set_t cpuSet, bool rt)
+// {
+//     // if (CPU_EQUAL(&cpuSet, &this->cpuSet))
+//     // {
+//     //     return;
+//     // }
+//     this->cpuSet = cpuSet;
+//     // sched_setaffinity(threadID, sizeof(cpu_set_t), &cpuSet);
+//     std::stringstream thread_name_stream;
+//     std::stringstream cpu_core_stream;
+
+//     thread_name_stream << "CPU_CG_" << get_first_cpu_from_set(&cpuSet);
+//     // Format the thread name and CPU core using stringstream
+//     // if (rt)
+//     // {
+//     //     thread_name_stream << "RT_Thread_" << get_first_cpu_from_set(&cpuSet);
+//     // }
+//     // else
+//     // {
+//     //     thread_name_stream << "BE_Thread_" << get_first_cpu_from_set(&cpuSet);
+//     // }
+//     cpu_core_stream << get_first_cpu_from_set(&cpuSet);
+
+//     // Convert stringstream to string and call create_cgroup with the results
+
+//     // if sched deadline policy, set affinity using cgroups
+//     if (policy == SCHED_DEADLINE)
+//     {
+//         std::string thread_name = thread_name_stream.str();
+//         std::string cpu_core = cpu_core_stream.str();
+//         // Create cgroup for the thread
+//         create_cgroup(thread_name.c_str(), cpu_core_stream.str().c_str());
+//         // Add thread to cgroup
+//         add_thread_to_cgroup(thread_name.c_str(), threadID);
+//     }
+// }
+
 void executor_thread::set_rt(bool rt)
 {
     this->rt = rt;
