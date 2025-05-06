@@ -33,12 +33,6 @@ struct rt_be_mutex
     struct list_head wait_queue; // Single queue instead of rt_queue & be_queue
 };
 
-// struct task_node
-// {
-//     struct task_struct *task;
-//     struct list_head list;
-// };
-
 static struct rt_be_mutex my_mutex;
 
 static void boost_task(struct task_struct *task)
@@ -66,6 +60,7 @@ static void unboost_task(struct task_struct *task)
         task->dl.dl_non_preemptible = 0;
         printk(KERN_INFO "rt_be_mutex: Unboosting task %d\n", task->pid);
         task_unlock(task);
+        // set_tsk_need_resched(task);
     }
 }
 
@@ -83,15 +78,15 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
     {
         mutex->owner = current->pid;
         boost_task(current);
-        printk(KERN_INFO "rt_be_mutex: Thread %d acquired lock.\n", current->pid);
+        // printk(KERN_INFO "rt_be_mutex: Thread %d acquired lock.\n", current->pid);
         up(&sem);
         return 0;
     }
 
     // Lock is busy, add current task directly to wait queue
     // No need for kmalloc anymore!
-    get_task_struct(current);  // Still need this reference count
-    
+    get_task_struct(current); // Still need this reference count
+
     // Add to wait queue using the embedded list_head
     list_add_tail(&current->rt_be_mutex_list, &mutex->wait_queue);
 
@@ -109,7 +104,8 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
 static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
 {
     struct task_struct *next_task;
-    int current_cpu, next_cpu;
+    int current_cpu;
+    unsigned long flags;
 
     down(&sem);
 
@@ -120,9 +116,7 @@ static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
     }
 
     mutex->owner = -1;
-    current_cpu = task_cpu(current);
-    unboost_task(current);
-    
+
     printk(KERN_INFO "rt_be_mutex: Thread %d released lock on CPU %d.\n",
            current->pid, current_cpu);
 retry:
@@ -141,10 +135,10 @@ retry:
             // Task is invalid, remove from queue
             printk(KERN_WARNING "rt_be_mutex: Waiter task %d is dead/exiting\n", next_task->pid);
             list_del(&next_task->rt_be_mutex_list);
-            put_task_struct(next_task);  // Balance get_task_struct from enqueue
+            put_task_struct(next_task); // Balance get_task_struct from enqueue
             goto retry;
         }
-        
+
         // We got a reference for validation, but don't need it now
         put_task_struct(next_task);
 
@@ -152,32 +146,39 @@ retry:
         list_del(&next_task->rt_be_mutex_list);
         mutex->owner = next_task->pid;
 
-        next_cpu = task_cpu(next_task);
+        preempt_disable();
+        local_irq_save(flags);
+        
+        // Boost next task before unboosting current
         boost_task(next_task);
-
-        // Log based on CPU
-        if (next_cpu == current_cpu) {
-            printk(KERN_INFO "rt_be_mutex: Thread %d acquiring lock on same CPU %d\n",
-                  next_task->pid, next_cpu);
-        } else {
-            printk(KERN_INFO "rt_be_mutex: Thread %d acquiring lock on different CPU %d (from %d)\n",
-                  next_task->pid, next_cpu, current_cpu);
-        }
-
-        // Wake up the task
+        unboost_task(current);
+        
+        // Wake up next task
         wake_up_process(next_task);
         
-        // Release reference from enqueue
+        // Release semaphore inside preempt-disabled section
+        up(&sem);
+        
+        // Re-enable preemption and IRQs
+        local_irq_restore(flags);
+        preempt_enable();
+
         put_task_struct(next_task);
+        return 0;
     }
     else
     {
+        preempt_disable();
+        local_irq_save(flags);
+        unboost_task(current);
+        local_irq_restore(flags);
+        preempt_enable();
         set_tsk_need_resched(current);
         printk(KERN_INFO "rt_be_mutex: No waiters in queue.\n");
-    }
 
-    up(&sem);
-    return 0;
+        up(&sem);
+        return 0;
+    }
 }
 static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -304,14 +305,14 @@ static void cleanup_all_waiters(void)
         task = list_entry(pos, struct task_struct, rt_be_mutex_list);
         list_del(pos);
         wake_up_process(task);
-        put_task_struct(task);  // Balance get_task_struct from enqueue
+        put_task_struct(task); // Balance get_task_struct from enqueue
     }
 
     // Force unlock if still owned
     if (my_mutex.owner != -1)
     {
         printk(KERN_WARNING "Force-unlocking. Owner=%d\n", my_mutex.owner);
-        my_mutex.owner = -1;  // Direct unlock to avoid recursion
+        my_mutex.owner = -1; // Direct unlock to avoid recursion
     }
     up(&sem);
 }
