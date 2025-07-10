@@ -21,15 +21,15 @@
 // #define THREAD_PERIOD 100000000 // 100ms
 // #define THREAD_PERIOD_US 100000 // 100ms
 // #define US_OFFSET 102400        // 100ms
-// #define THREAD_PERIOD 50000000  // 50ms
-// #define THREAD_PERIOD_US 50000  // 50ms
-// #define US_OFFSET 51200         // 50ms
+#define THREAD_PERIOD 50000000  // 50ms
+#define THREAD_PERIOD_US 50000  // 50ms
+#define US_OFFSET 51200         // 50ms
 // #define THREAD_PERIOD 20000000  // 20ms
 // #define THREAD_PERIOD_US 20000  // 20ms
 // #define US_OFFSET 20480         // 20ms
-#define THREAD_PERIOD 10000000     // 10ms
-#define THREAD_PERIOD_US 10000     // 10ms
-#define US_OFFSET 10240            // 10ms
+// #define THREAD_PERIOD 10000000     // 10ms
+// #define THREAD_PERIOD_US 10000     // 10ms
+// #define US_OFFSET 10240            // 10ms
 // #define THREAD_PERIOD 5000000   // 5ms
 // #define THREAD_PERIOD_US 5000   // 5ms
 // #define US_OFFSET 5120          // 5ms
@@ -852,7 +852,9 @@ void executor::run(std::shared_ptr<executor_thread> t) // equivalent to MultiThr
                     wait_mutex_.unlock();
                     return;
                 }
-                if (!get_next_executable_unlocked(any_exec, next_exec_timeout_, &wait_mutex_))
+                if(!get_next_executable(any_exec, next_exec_timeout_))
+
+                //if (!get_next_executable_unlocked(any_exec, next_exec_timeout_, &wait_mutex_))
                 // if (!get_next_executable_unlocked(any_exec, std::chrono::nanoseconds(0), &wait_mutex_))
                 {
                     wait_mutex_.unlock();

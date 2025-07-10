@@ -43,7 +43,7 @@ static void boost_task(struct task_struct *task)
         task_lock(task);
         // Direct access to dl_boosted field
         task->dl.dl_non_preemptible = 1;
-        printk(KERN_INFO "rt_be_mutex: Boosting task %d\n", task->pid);
+        // printk(KERN_INFO "rt_be_mutex: Boosting task %d\n", task->pid);
         task_unlock(task);
     }
     else
@@ -58,7 +58,7 @@ static void unboost_task(struct task_struct *task)
     {
         task_lock(task);
         task->dl.dl_non_preemptible = 0;
-        printk(KERN_INFO "rt_be_mutex: Unboosting task %d\n", task->pid);
+        // printk(KERN_INFO "rt_be_mutex: Unboosting task %d\n", task->pid);
         task_unlock(task);
         // set_tsk_need_resched(task);
     }
@@ -90,7 +90,7 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
     // Add to wait queue using the embedded list_head
     list_add_tail(&current->rt_be_mutex_list, &mutex->wait_queue);
 
-    printk(KERN_INFO "rt_be_mutex: Thread %d queued for lock\n", current->pid);
+    // printk(KERN_INFO "rt_be_mutex: Thread %d queued for lock\n", current->pid);
 
     set_current_state(TASK_UNINTERRUPTIBLE);
     smp_mb();
@@ -104,21 +104,23 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt)
 static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
 {
     struct task_struct *next_task;
-    int current_cpu;
+    // int current_cpu;
     unsigned long flags;
 
     down(&sem);
 
     if (mutex->owner != current->pid)
     {
+        printk(KERN_WARNING "rt_be_mutex: Unlock permission error: owner=%d, current=%d, process=%d\n",
+               mutex->owner, current->pid, current->tgid);
         up(&sem);
         return -EPERM;
     }
 
     mutex->owner = -1;
 
-    printk(KERN_INFO "rt_be_mutex: Thread %d released lock on CPU %d.\n",
-           current->pid, current_cpu);
+    // printk(KERN_INFO "rt_be_mutex: Thread %d released lock on CPU %d.\n",
+    //        current->pid, current_cpu);
 retry:
     if (!list_empty(&mutex->wait_queue))
     {
@@ -148,22 +150,21 @@ retry:
 
         preempt_disable();
         local_irq_save(flags);
-        
+
         // Boost next task before unboosting current
         boost_task(next_task);
         unboost_task(current);
-        
+
         // Wake up next task
         wake_up_process(next_task);
-        
+
         // Release semaphore inside preempt-disabled section
         up(&sem);
-        
+
         // Re-enable preemption and IRQs
         local_irq_restore(flags);
         preempt_enable();
 
-        put_task_struct(next_task);
         return 0;
     }
     else
@@ -171,12 +172,13 @@ retry:
         preempt_disable();
         local_irq_save(flags);
         unboost_task(current);
+        up(&sem);
+
         local_irq_restore(flags);
         preempt_enable();
         set_tsk_need_resched(current);
-        printk(KERN_INFO "rt_be_mutex: No waiters in queue.\n");
+        // printk(KERN_INFO "rt_be_mutex: No waiters in queue.\n");
 
-        up(&sem);
         return 0;
     }
 }

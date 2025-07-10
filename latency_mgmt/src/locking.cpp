@@ -29,14 +29,8 @@ using std::placeholders::_1;
 // std::mutex mtx;
 
 #define gettid() syscall(__NR_gettid)
-// #define THREAD_PERIOD_US "1000000" // 1s
-// #define THREAD_PERIOD_US "500000" // 500ms
-// #define THREAD_PERIOD_US "100000" // 100ms
-#define THREAD_PERIOD_US "50000" // 50ms
-//#define THREAD_PERIOD_US "20000" // 20ms
-//#define THREAD_PERIOD_US "10000" // 10ms
-//#define THREAD_PERIOD_US "5000" // 5ms
-// #define THREAD_PERIOD_US "1000" // 1ms
+#define THREAD_PERIOD_US "20000" // 20ms
+
 
 void test_case_1();
 void test_case_2();

@@ -100,7 +100,8 @@ void MPCController::chain_test()
 double arbitrary_interference(double delta, double alpha, double T, double C)
 {
 
-    return std::ceil((delta + alpha) / T) * C;
+    // if alpha is less than zero, return max int as interference calculation
+    return alpha > 0 ? std::ceil((delta + alpha) / T) * C : std::numeric_limits<int>::max();
     // if ((delta - std::floor(double((delta + alpha)) / T) * T) < 0)
     // {
     //     return std::floor(double((delta + alpha)) / T) * C + C;
@@ -307,7 +308,7 @@ void MPCController::worker_thread_run(std::atomic<bool> &complete)
             else
             {
                 // Timeout occurred
-                std::cerr << "Worker thread wait timeout" << std::endl;
+                //std::cerr << "Worker thread wait timeout" << std::endl;
                 continue;
             }
         }
@@ -362,6 +363,8 @@ void MPCController::run()
     bool first_run = true;
     do
     {
+        auto start_profile = std::chrono::high_resolution_clock::now();
+
         // clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
         bool realloc = false;
         gettimeofday(&start_time, NULL);
@@ -485,6 +488,9 @@ void MPCController::run()
         {
             exec->enable_callback_priority();
             exec->start();
+            auto stop_profile = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(stop_profile - start_profile).count();
+            std::cerr << "Initial controller budget reduction time: " << elapsed << " microseconds" << std::endl;
             // exec->apply_callback_to_thread_assignment();
             first_run = false;
         }
@@ -516,7 +522,7 @@ timeval add_timevals(const timeval &t1, const timeval &t2)
 
 double interference(double delta, double alpha, double T, double C)
 {
-    return std::floor((delta + alpha) / T) * C + std::min(C, delta + alpha - std::floor((delta + alpha) / T) * T);
+    return alpha > 0 ?  std::floor((delta + alpha) / T) * C + std::min(C, delta + alpha - std::floor((delta + alpha) / T) * T) : std::numeric_limits<int>::max();
 }
 
 double sbf(double delta, int budget, int period)
@@ -691,7 +697,7 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
                         // calculate the interference
                         if (alpha <= 0)
                         {
-                            std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
+                            //std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
                         }
                         intf += arbitrary_interference(delta, alpha, T, C);
                     }
@@ -700,7 +706,7 @@ struct timeval MPCController::do_partial_ad_analysis(std::vector<std::shared_ptr
                 {
                     if (alpha <= 0)
                     {
-                        std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
+                        //std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
                     }
                     // calculate the interference
                     intf += arbitrary_interference(delta, alpha, T, C);
@@ -876,7 +882,7 @@ struct timeval MPCController::do_partial_cd_analysis(std::vector<std::shared_ptr
                         // calculate the interference
                         if (alpha <= 0)
                         {
-                            std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
+                            //std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
                         }
                         intf += interference(delta, alpha, T, C);
                     }
@@ -885,7 +891,7 @@ struct timeval MPCController::do_partial_cd_analysis(std::vector<std::shared_ptr
                 {
                     if (alpha <= 0)
                     {
-                        std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
+                        //std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
                     }
                     // calculate the interference
                     intf += interference(delta, alpha, T, C);
@@ -992,7 +998,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
     // double M = tg->threads.size() * (double)tg->total_budget / 10000;
 
     auto MSG_DELAY = 500;
-    auto QUEUE_DELAY = 0;
+    auto QUEUE_DELAY = 1000;
     double M = (double)tg->threads.size(); //* (double)budget / (double)THREAD_PERIOD;
     int k = 0;
     std::vector<double> response_times;
@@ -1071,6 +1077,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                     partial_chainset.push_back(candidate_chain);
                 }
             }
+
             // now we need to take the current chain, and make a fake chain that only includes the root of the chain, up until the nonlinear callback
             auto partial_chain = std::make_shared<Chain>(chain->getChainID());
             for (auto &callback : chain->getCallbacks())
@@ -1170,7 +1177,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                             // calculate the interference
                             if (alpha <= 0)
                             {
-                                std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
+                                //std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
                             }
                             intf += interference(delta, alpha, T, C);
                         }
@@ -1179,7 +1186,7 @@ std::vector<struct timeval> MPCController::pwa_cd(std::vector<std::shared_ptr<Ch
                     {
                         if (alpha <= 0)
                         {
-                            std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
+                            //std::cerr << "Interference calculation error: alpha <= 0" << std::endl;
                         }
                         // calculate the interference
                         intf += interference(delta, alpha, T, C);
@@ -1490,7 +1497,7 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
                                 std::cerr << "Interfering Chain ID: " << interf_chain->getChainID() << std::endl;
                                 interf_chain->printChain();
                                 interf_chain->printCallbacks();
-                                exit(EXIT_FAILURE);
+                                //exit(EXIT_FAILURE);
                             }
                             intf += arbitrary_interference(delta, alpha, T, C);
                         }
@@ -1510,7 +1517,7 @@ std::vector<struct timeval> MPCController::pwa_ad(std::vector<std::shared_ptr<Ch
                             std::cerr << "Interfering Chain ID: " << interf_chain->getChainID() << std::endl;
                             interf_chain->printChain();
                             interf_chain->printCallbacks();
-                            exit(EXIT_FAILURE);
+                            //exit(EXIT_FAILURE);
                         }
                         intf += arbitrary_interference(delta, alpha, T, C);
                     }
@@ -1642,6 +1649,9 @@ double MPCController::compute_chain_utilization(std::shared_ptr<Chain> chain)
 
 void MPCController::create_threadclass(void)
 {
+    // measure exeution time of this function
+    auto start = std::chrono::high_resolution_clock::now();
+    
     unsigned int analysis_count = 0;
     // Start with half and half allocation between RT and BE
     std::cout << "Creating threadclasses" << std::endl;
@@ -1674,7 +1684,15 @@ void MPCController::create_threadclass(void)
         }
     }
     std::cout << "Threadclasses created" << std::endl;
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cerr << "Threadclass creation took: " << duration.count() << " microseconds" << std::endl;
+
+    start = std::chrono::high_resolution_clock::now();
     this->reallocate_chains(&analysis_count);
+    stop = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    std::cerr << "Chain to threadclass allocation took: " << duration.count() << " microseconds" << std::endl;
     // std::cout << "Parsing and sorting chains" << std::endl;
     // std::vector<std::vector<std::shared_ptr<Chain>>> split_chainsets = exec->parse_and_sort_chains(exec->get_chains());
     // std::vector<std::shared_ptr<Chain>> rt_chains = split_chainsets[0];
