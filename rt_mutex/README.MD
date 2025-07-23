@@ -1,8 +1,8 @@
-# RT-BE Mutex Kernel Module README
+# RT Deferred Mutex Kernel Module
 
 ## Overview
 
-This kernel module implements a custom mutex mechanism called "RT-BE Mutex" (Real-Time Best-Effort Mutex) designed for synchronization between real-time (SCHED_DEADLINE) and best-effort tasks in a Linux kernel environment. It is an out-of-tree module, meaning it is compiled and loaded separately from the main kernel. The module exposes a character device (`/dev/rt_be_mutex`) that user-space applications can interact with via ioctls to lock and unlock the mutex.
+This kernel module implements a custom mutex mechanism called "RT Deferred Mutex" (Real-Time Deferred Mutex) designed for synchronization between real-time (SCHED_DEADLINE) and best-effort tasks in a Linux kernel environment. It is an out-of-tree module, meaning it is compiled and loaded separately from the main kernel. The module exposes a character device (`/dev/rt_be_mutex`) that user-space applications can interact with via ioctls to lock and unlock the mutex.
 
 The mutex supports special handling for throttled SCHED_DEADLINE tasks by deferring their wait using high-resolution timers (hrtimers) until their deadline replenishment. It also includes "boosting" for real-time tasks to make them non-preemptible and optionally account for overruns (using custom kernel patches for fields like `dl_non_preemptible` and `dl_account_overrun`).
 
