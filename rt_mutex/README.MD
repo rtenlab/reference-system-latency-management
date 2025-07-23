@@ -27,7 +27,7 @@ Key features:
 ### `struct lock_args`
 - Used for IOCTL_LOCK ioctl.
 - Fields:
-  - `int task_type`: TASK_TYPE_RT (1) for real-time, TASK_TYPE_BE (2) for best-effort (currently unused in logic).
+  - `int task_type`: TASK_TYPE_RT (1) for real-time, TASK_TYPE_BE (2) for best-effort.
   - `bool account_overrun`: If true, enables overrun accounting during boosting.
 
 ### `struct deferred_waiter`
