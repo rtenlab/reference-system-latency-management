@@ -1,28 +1,27 @@
-# RT-BE Mutex Kernel Module README
+# RT Deferred Mutex Kernel Module
 
 ## Overview
 
-This kernel module implements a custom mutex mechanism called "RT-BE Mutex" (Real-Time Best-Effort Mutex) designed for synchronization between real-time (SCHED_DEADLINE) and best-effort tasks in a Linux kernel environment. It is an out-of-tree module, meaning it is compiled and loaded separately from the main kernel. The module exposes a character device (`/dev/rt_be_mutex`) that user-space applications can interact with via ioctls to lock and unlock the mutex.
+This kernel module implements a custom mutex mechanism called "RT Deferred Mutex" designed for synchronization between real-time (SCHED_DEADLINE) tasks in Linux. It is an out-of-tree module, meaning it is compiled and loaded separately from the main kernel. The module exposes a character device (`/dev/rt_be_mutex`) that user-space applications can interact with via ioctls to lock and unlock the mutex.
 
-The mutex supports special handling for throttled SCHED_DEADLINE tasks by deferring their wait using high-resolution timers (hrtimers) until their deadline replenishment. It also includes "boosting" for real-time tasks to make them non-preemptible and optionally account for overruns (using custom kernel patches for fields like `dl_non_preemptible` and `dl_account_overrun`).
+The mutex supports special handling for throttled SCHED_DEADLINE tasks by deferring their execution using high-resolution timers (hrtimers) until their deadline replenishment. Deferral happens during unlock when granting the mutex to the next waiter, rather than during lock. This ensures that throttled tasks are not woken prematurely, preventing invalid runs. It also includes "boosting" for lockholders to make them non-preemptible and optionally account for overruns (using custom kernel patches for fields like `dl_non_preemptible` and `dl_account_overrun`).
 
 Key features:
-- FIFO wait queue for non-throttled tasks.
-- Sorted deferred queue for throttled DL tasks (sorted by replenishment time).
+- FIFO wait queue for all waiters (throttled or not).
+- Deferred queue for throttled tasks detected during unlock (sorted by replenishment time).
+- Ready deferred list for tasks whose timers have fired (moved to front of wait queue).
 - Boosting/unboosting of DL tasks upon acquiring/releasing the mutex.
 - Cleanup on file release or module unload to avoid leaks or deadlocks.
 
-**Note**: This module assumes a patched kernel with custom fields in `struct sched_dl_entity` (`dl_non_preemptible`, `dl_account_overrun`) and `struct task_struct` (`rt_be_mutex_list`). It also assumes special accounting for these additional fields inside of deadline.c. It will not work on a standard kernel without these modifications.
+**Note**: This module assumes a patched kernel with custom fields in `struct sched_dl_entity` (`dl_non_preemptible`, `dl_account_overrun`) and `struct task_struct` (`rt_be_mutex_list`). It will not work on a standard kernel without these modifications. It also assumes special accounting for these additional fields inside of deadline.c. It will not work on a standard kernel without these modifications. The current implementation prioritizes checking for throttling in unlock to avoid waking throttled tasks.
 
 ## Dependencies and Assumptions
 
-- Linux kernel version: Tested on 5.10.120-rt70 (custom RT patchset).
+- Linux kernel version: Tested on 5.10.120-rt70 (custom RT patches).
 - Custom kernel patches: 
   - Addition of `dl_non_preemptible` and `dl_account_overrun` in `struct sched_dl_entity`.
   - Addition of `struct list_head rt_be_mutex_list` in `struct task_struct` for queuing tasks.
-  - Addition of logic for allowing non-preemptible dl entity status, as well as budget overrun accounting.  
-- Build environment: Kernel headers and build tools matching your running kernel.
-
+  - Addition of logic for allowing non-preemptible dl entity status, as well as budget overrun accounting.
 ## Data Structures
 
 ### `struct lock_args`
@@ -38,13 +37,13 @@ Key features:
   - `struct task_struct *task`: Pointer to the throttled task (refcount held).
   - `struct hrtimer timer`: Timer set to fire at replenishment time.
   - `ktime_t fire_time`: Absolute time for timer (based on task's deadline).
-  - `struct rt_be_mutex *mutex`: Backpointer to the mutex.
+  - `struct rt_deferred_mutex *mutex`: Backpointer to the mutex.
 
-### `struct rt_be_mutex`
+### `struct rt_deferred_mutex`
 - Core mutex state (single global instance: `my_mutex`).
 - Fields:
   - `pid_t owner`: PID of current owner (-1 if free).
-  - `struct list_head wait_queue`: FIFO list for non-throttled waiters (uses task's `rt_be_mutex_list`).
+  - `struct list_head wait_queue`: FIFO list for all waiters (uses task's `rt_be_mutex_list`).
   - `struct list_head deferred_queue`: Sorted list for throttled waiters (by `fire_time`).
   - `struct list_head ready_deferred`: List for deferred tasks whose timers have fired (moved to front of `wait_queue`).
   - `spinlock_t lock`: Protects all fields for concurrency.
@@ -52,48 +51,48 @@ Key features:
 ## Key Functions
 
 ### Initialization and Cleanup
-- `init_rt_be_mutex(struct rt_be_mutex *mutex)`: Initializes the mutex (owner = -1, empty lists, spinlock init).
-- `__init rt_be_mutex_init(void)`: Module init – allocates char device, registers cdev, creates sysfs class and device.
-- `__exit rt_be_mutex_exit(void)`: Module exit – cleans up waiters, destroys device/class/cdev.
+- `init_rt_deferred_mutex(struct rt_deferred_mutex *mutex)`: Initializes the mutex (owner = -1, empty lists, spinlock init).
+- `__init rt_deferred_mutex_init(void)`: Module init – allocates char device, registers cdev, creates sysfs class and device.
+- `__exit rt_deferred_mutex_exit(void)`: Module exit – cleans up waiters, destroys device/class/cdev.
 - `cleanup_all_waiters(void)`: Wakes and removes all waiters/deferred tasks on unload (with timer cancels).
 - `dev_release(struct inode *inode, struct file *file)`: Called on file close – forces unlock if owned, cleans up per-process waiters/deferred entries.
 
 ### Locking and Unlocking
-- `rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt, bool account_overrun)`:
+- `rt_deferred_mutex_lock(struct rt_deferred_mutex *mutex, bool is_rt, bool account_overrun)`:
   - Acquires spinlock.
   - If free or already owned by current, sets owner, boosts task, releases spinlock.
-  - If throttled DL task: Allocates `deferred_waiter`, sets timer to deadline, inserts sorted into `deferred_queue`.
-  - Else: Adds task to tail of `wait_queue`.
+  - Adds task to tail of `wait_queue`.
   - Loops: Sleeps uninterruptibly until owner matches current (woken by unlock or timer).
-- `rt_be_mutex_unlock(struct rt_be_mutex *mutex)`:
+- `rt_deferred_mutex_unlock(struct rt_deferred_mutex *mutex)`:
   - Acquires spinlock.
   - Checks permission (must be owner).
   - Clears owner, unboosts current.
   - Moves `ready_deferred` to front of `wait_queue`.
-  - If queue non-empty: Validates next task (skips dead/exiting), grants ownership, boosts, wakes.
+  - If queue non-empty: Validates next task (skips dead/exiting).
+    - Checks if next task is throttled (DL policy and dl_throttled set).
+      - If throttled: Allocates `deferred_waiter`, sets timer to deadline, inserts sorted into `deferred_queue`, removes from wait_queue, retries for next waiter.
+      - If not throttled: Grants ownership, boosts, wakes, releases spinlock.
   - Handles throttling for current task by rescheduling if runtime <= 0.
-
 
 ### Boosting and Deferred Handling
 - `boost_task(struct task_struct *task, bool account_overrun)`: Sets `dl_non_preemptible=1` and optionally `dl_account_overrun=1` for DL tasks.
 - `unboost_task(struct task_struct *task)`: Resets above fields to 0.
-- `process_ready_deferred(struct rt_be_mutex *mutex)`: If mutex free and ready_deferred non-empty, splices to wait_queue front, grants to first valid task (with validation, boost, wake).
+- `process_ready_deferred(struct rt_deferred_mutex *mutex)`: If mutex free and ready_deferred non-empty, splices to wait_queue front, grants to first valid task (with validation, boost, wake).
 - `deferred_timer_cb(struct hrtimer *timer)`: Timer callback – removes from deferred_queue, adds to ready_deferred, calls process_ready_deferred.
 
 ### IOCTL Interface
 - Device: `/dev/rt_be_mutex`.
-- `IOCTL_LOCK`: Copies `lock_args` from user, calls `rt_be_mutex_lock`.
-- `IOCTL_UNLOCK`: Dummy int from user, calls `rt_be_mutex_unlock`.
+- `IOCTL_LOCK`: Copies `lock_args` from user, calls `rt_deferred_mutex_lock`.
+- `IOCTL_UNLOCK`: Dummy int from user, calls `rt_deferred_mutex_unlock`.
 
 ## Build and Installation
 
 1. **Files Needed**:
    - `rt_be_mutex.c`: Main source.
-   - `Makefile`: As provided above.
 
 2. **Build**:
    - Run `make` in the module directory. This invokes the kernel build system.
-   - Outputs `rt_be_mutex.ko`.
+   - Outputs `rt_be_mutex.ko` (note: name changed to match code).
 
 3. **Load/Unload**:
    - `insmod rt_be_mutex.ko` (as root).
@@ -102,6 +101,5 @@ Key features:
 
 4. **Usage Example**:
    - Open `/dev/rt_be_mutex` in user-space.
-   - Use `ioctl(fd, IOCTL_LOCK, &args)` to lock.
-   - Use `ioctl(fd, IOCTL_UNLOCK, &dummy)` to unlock.
-   - Enable tracing before running your app.
+   - Use `ioctl(fd, IOCTL_LOCK, &args)` to lock (adds to wait queue and waits).
+   - Use `ioctl(fd, IOCTL_UNLOCK, &dummy)` to unlock (checks next waiter for throttling before granting).

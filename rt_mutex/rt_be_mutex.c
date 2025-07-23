@@ -141,8 +141,6 @@ static void init_rt_deferred_mutex(struct rt_deferred_mutex *mutex)
 static int rt_deferred_mutex_lock(struct rt_deferred_mutex *mutex, bool is_rt, bool account_overrun)
 { // Acquire loop
     unsigned long flags;
-    struct deferred_waiter *dw = NULL;
-    struct list_head *pos;
 
     spin_lock_irqsave(&mutex->lock, flags);
 
@@ -161,40 +159,9 @@ static int rt_deferred_mutex_lock(struct rt_deferred_mutex *mutex, bool is_rt, b
         return 0;
     }
 
-    if (current->policy == SCHED_DEADLINE && current->dl.dl_throttled) {
-        ktime_t fire_time = ns_to_ktime(current->dl.deadline);
-
-        dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
-        if (!dw) {
-            spin_unlock_irqrestore(&mutex->lock, flags);
-            return -ENOMEM;
-        }
-
-        get_task_struct(current); // Reference for deferred waiter
-        dw->task = current;
-        dw->mutex = mutex;
-        dw->fire_time = fire_time;
-
-        hrtimer_init(&dw->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
-        dw->timer.function = deferred_timer_cb;
-        hrtimer_start(&dw->timer, dw->fire_time, HRTIMER_MODE_ABS);
-
-        pos = &mutex->deferred_queue;
-        while (pos->next != &mutex->deferred_queue) {
-            struct deferred_waiter *tmp = list_entry(pos->next, struct deferred_waiter, list);
-            if (ktime_after(dw->fire_time, tmp->fire_time)) {
-                pos = &tmp->list;
-            } else {
-                break;
-            }
-        }
-        list_add(&dw->list, pos);
-
-        //trace_rt_deferred_mutex_enter_deferred(current->pid, ktime_to_ns(fire_time));
-    } else {
-        get_task_struct(current); 
-        list_add_tail(&current->rt_be_mutex_list, &mutex->wait_queue); 
-    }
+    // Always add to wait_queue, regardless of throttling state
+    get_task_struct(current); 
+    list_add_tail(&current->rt_be_mutex_list, &mutex->wait_queue); 
 
     while (mutex->owner != current->pid) {
         set_current_state(TASK_UNINTERRUPTIBLE);
@@ -247,24 +214,69 @@ retry:
             goto retry;
         }
 
-        list_del(&next_task->rt_be_mutex_list);
-        mutex->owner = next_task->pid;
-        next_owner = next_task->pid;
-        boost_task(next_task, true); // TODO: Handle overrun toggle using account_overrun arg
-        spin_unlock_irqrestore(&mutex->lock, flags);
-        wake_up_process(next_task);
-        put_task_struct(next_task); 
+        // Check if the next task is throttled
+        if (next_task->policy == SCHED_DEADLINE && next_task->dl.dl_throttled) {
+            // Move to deferred queue instead of granting immediately
+            struct deferred_waiter *dw;
+            struct list_head *pos;
+            ktime_t fire_time = ns_to_ktime(next_task->dl.deadline);
 
-        //trace_rt_deferred_mutex_release(current->pid, next_owner);
+            dw = kmalloc(sizeof(*dw), GFP_ATOMIC);
+            if (!dw) {
+                // If allocation fails, leave in wait_queue or handle error
+                spin_unlock_irqrestore(&mutex->lock, flags);
+                return -ENOMEM;
+            }
 
-        // Handle current task throttling properly
-        if (current->policy == SCHED_DEADLINE && current->dl.runtime <= 0)
-        {
-            set_tsk_need_resched(current);
-            schedule();
+            // Transfer the task ref from wait_queue to deferred_waiter
+            dw->task = next_task;
+            dw->mutex = mutex;
+            dw->fire_time = fire_time;
+
+            hrtimer_init(&dw->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+            dw->timer.function = deferred_timer_cb;
+            hrtimer_start(&dw->timer, dw->fire_time, HRTIMER_MODE_ABS);
+
+            // Remove from wait_queue
+            list_del(&next_task->rt_be_mutex_list);
+
+            // Insert in sorted order into deferred_queue
+            pos = &mutex->deferred_queue;
+            while (pos->next != &mutex->deferred_queue) {
+                struct deferred_waiter *tmp = list_entry(pos->next, struct deferred_waiter, list);
+                if (ktime_after(dw->fire_time, tmp->fire_time)) {
+                    pos = &tmp->list;
+                } else {
+                    break;
+                }
+            }
+            list_add(&dw->list, pos);
+
+            //trace_rt_deferred_mutex_enter_deferred(next_task->pid, ktime_to_ns(fire_time));
+
+            // Retry for next waiter
+            goto retry;
+        } else {
+            // Not throttled, grant ownership
+            list_del(&next_task->rt_be_mutex_list);
+            mutex->owner = next_task->pid;
+            next_owner = next_task->pid;
+            boost_task(next_task, true); // TODO: Handle overrun toggle using account_overrun arg
+            spin_unlock_irqrestore(&mutex->lock, flags);
+            wake_up_process(next_task);
+            put_task_struct(next_task); 
+
+            //trace_rt_deferred_mutex_release(current->pid, next_owner);
+
+            // Handle current task throttling properly
+            if (current->policy == SCHED_DEADLINE && current->dl.runtime <= 0)
+            {
+                set_tsk_need_resched(current);
+                schedule();
+            }
+
+            return 0;
         }
-
-        return 0;
     }
 
     spin_unlock_irqrestore(&mutex->lock, flags);
