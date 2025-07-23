@@ -1,4 +1,4 @@
-// rt_be_mutex.c
+// rt_deferred_mutex.c
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
@@ -14,9 +14,6 @@
 #include <linux/sched/task.h>
 #include <linux/pid.h>
 #include <linux/ktime.h>
-
-// #define CREATE_//trace_POINTS
-// #include "//trace_rt_be_mutex.h"
 
 #define DEVICE_NAME "rt_be_mutex"                 // Device name in /dev
 #define IOCTL_LOCK _IOW('r', 1, struct lock_args) // Lock ioctl (write struct)
@@ -41,10 +38,10 @@ struct deferred_waiter
     struct task_struct *task;  // Throttled task
     struct hrtimer timer;      // Timer to replenishment
     ktime_t fire_time;         // Fire time for sorting
-    struct rt_be_mutex *mutex; // Mutex backptr
+    struct rt_deferred_mutex *mutex; // Mutex backptr
 };
 
-struct rt_be_mutex
+struct rt_deferred_mutex
 {                                    // Mutex state
     pid_t owner;                     // Owner PID (-1 free)
     struct list_head wait_queue;     // FIFO for non-throttled
@@ -53,7 +50,7 @@ struct rt_be_mutex
     spinlock_t lock;                 // Protects all above
 };
 
-static struct rt_be_mutex my_mutex; // Single global mutex
+static struct rt_deferred_mutex my_mutex; // Single global mutex
 
 static void boost_task(struct task_struct *task, bool account_overrun)
 {
@@ -64,7 +61,7 @@ static void boost_task(struct task_struct *task, bool account_overrun)
     if (account_overrun)
         task->dl.dl_account_overrun = 1;
 
-    //trace_rt_be_mutex_boost(task->pid, task->dl.dl_non_preemptible, task->dl.dl_account_overrun);
+    //trace_rt_deferred_mutex_boost(task->pid, task->dl.dl_non_preemptible, task->dl.dl_account_overrun);
 }
 
 static void unboost_task(struct task_struct *task)
@@ -75,17 +72,17 @@ static void unboost_task(struct task_struct *task)
     task->dl.dl_non_preemptible = 0;
     task->dl.dl_account_overrun = 0;
 
-    //trace_rt_be_mutex_unboost(task->pid);
+    //trace_rt_deferred_mutex_unboost(task->pid);
 }
 
-static void process_ready_deferred(struct rt_be_mutex *mutex)
+static void process_ready_deferred(struct rt_deferred_mutex *mutex)
 { // Grant to ready deferred if free
     struct task_struct *next_task;
 
     if (mutex->owner != -1 || list_empty(&mutex->ready_deferred))
         return;
 
-    list_splice_init(&mutex->ready_deferred, &mutex->wait_queue); // Move to front
+    list_splice_init(&mutex->ready_deferred, &mutex->wait_queue); 
 
     if (list_empty(&mutex->wait_queue))
         return;
@@ -93,13 +90,12 @@ static void process_ready_deferred(struct rt_be_mutex *mutex)
 retry:
     next_task = list_first_entry(&mutex->wait_queue, struct task_struct, rt_be_mutex_list);
 
-    // Simplified validation: no refcount_inc_not_zero (safe under spinlock with held ref)
     if (!pid_task(find_vpid(next_task->pid), PIDTYPE_PID) ||
         (next_task->flags & PF_EXITING) ||
         (next_task->state == TASK_DEAD) ||
         (next_task->exit_state != 0))
     {
-        pr_warn_ratelimited("rt_be_mutex: Ready deferred task %d is dead/exiting\n", next_task->pid);
+        pr_warn_ratelimited("rt_deferred_mutex: Ready deferred task %d is dead/exiting\n", next_task->pid);
         list_del(&next_task->rt_be_mutex_list);
         put_task_struct(next_task);
         if (!list_empty(&mutex->wait_queue))
@@ -109,31 +105,31 @@ retry:
 
     list_del(&next_task->rt_be_mutex_list);
     mutex->owner = next_task->pid;
-    boost_task(next_task, false);
-    //trace_rt_be_mutex_acquire(next_task->pid, mutex->owner, next_task->policy == SCHED_DEADLINE, false);
+    boost_task(next_task, true); // TODO: Handle overrun toggle using account_overrun arg 
+    //trace_rt_deferred_mutex_acquire(next_task->pid, mutex->owner, next_task->policy == SCHED_DEADLINE, false);
     wake_up_process(next_task);
-    put_task_struct(next_task); // Drop enqueue ref
+    put_task_struct(next_task); 
 }
 
 static enum hrtimer_restart deferred_timer_cb(struct hrtimer *timer)
 { // Timer fires: move to ready
     struct deferred_waiter *dw = container_of(timer, struct deferred_waiter, timer);
-    struct rt_be_mutex *mutex = dw->mutex;
-    struct task_struct *task = dw->task; // Cache task pointer
+    struct rt_deferred_mutex *mutex = dw->mutex;
+    struct task_struct *task = dw->task; 
     unsigned long flags;
 
     spin_lock_irqsave(&mutex->lock, flags);
     list_del(&dw->list);
     kfree(dw);
     list_add_tail(&task->rt_be_mutex_list, &mutex->ready_deferred);
-    //trace_rt_be_mutex_deferred_fire(task->pid);
+    //trace_rt_deferred_mutex_deferred_fire(task->pid);
     process_ready_deferred(mutex);
     spin_unlock_irqrestore(&mutex->lock, flags);
 
     return HRTIMER_NORESTART;
 }
 
-static void init_rt_be_mutex(struct rt_be_mutex *mutex)
+static void init_rt_deferred_mutex(struct rt_deferred_mutex *mutex)
 { // Setup mutex
     mutex->owner = -1;
     INIT_LIST_HEAD(&mutex->wait_queue);
@@ -142,7 +138,7 @@ static void init_rt_be_mutex(struct rt_be_mutex *mutex)
     spin_lock_init(&mutex->lock);
 }
 
-static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt, bool account_overrun)
+static int rt_deferred_mutex_lock(struct rt_deferred_mutex *mutex, bool is_rt, bool account_overrun)
 { // Acquire loop
     unsigned long flags;
     struct deferred_waiter *dw = NULL;
@@ -153,14 +149,14 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt, bool account_
     if (mutex->owner == -1) {
         mutex->owner = current->pid;
         boost_task(current, account_overrun);
-        //trace_rt_be_mutex_acquire(current->pid, mutex->owner, is_rt, account_overrun);
+        //trace_rt_deferred_mutex_acquire(current->pid, mutex->owner, is_rt, account_overrun);
         spin_unlock_irqrestore(&mutex->lock, flags);
         return 0;
     }
 
     if (mutex->owner == current->pid) {
         boost_task(current, account_overrun);
-        //trace_rt_be_mutex_acquire(current->pid, mutex->owner, is_rt, account_overrun);
+        //trace_rt_deferred_mutex_acquire(current->pid, mutex->owner, is_rt, account_overrun);
         spin_unlock_irqrestore(&mutex->lock, flags);
         return 0;
     }
@@ -183,7 +179,6 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt, bool account_
         dw->timer.function = deferred_timer_cb;
         hrtimer_start(&dw->timer, dw->fire_time, HRTIMER_MODE_ABS);
 
-        // Insert in sorted order (using while loop as in your original)
         pos = &mutex->deferred_queue;
         while (pos->next != &mutex->deferred_queue) {
             struct deferred_waiter *tmp = list_entry(pos->next, struct deferred_waiter, list);
@@ -195,10 +190,10 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt, bool account_
         }
         list_add(&dw->list, pos);
 
-        //trace_rt_be_mutex_enter_deferred(current->pid, ktime_to_ns(fire_time));
+        //trace_rt_deferred_mutex_enter_deferred(current->pid, ktime_to_ns(fire_time));
     } else {
-        get_task_struct(current); // Reference for wait queue
-        list_add_tail(&current->rt_be_mutex_list, &mutex->wait_queue);  // Fixed typo here
+        get_task_struct(current); 
+        list_add_tail(&current->rt_be_mutex_list, &mutex->wait_queue); 
     }
 
     while (mutex->owner != current->pid) {
@@ -209,12 +204,12 @@ static int rt_be_mutex_lock(struct rt_be_mutex *mutex, bool is_rt, bool account_
         set_current_state(TASK_RUNNING);
     }
 
-    //trace_rt_be_mutex_acquire(current->pid, mutex->owner, is_rt, account_overrun);
+    //trace_rt_deferred_mutex_acquire(current->pid, mutex->owner, is_rt, account_overrun);
     spin_unlock_irqrestore(&mutex->lock, flags);
     return 0;
 }
 
-static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
+static int rt_deferred_mutex_unlock(struct rt_deferred_mutex *mutex)
 { // Release and grant next
     struct task_struct *next_task;
     pid_t next_owner = -1;
@@ -225,7 +220,7 @@ static int rt_be_mutex_unlock(struct rt_be_mutex *mutex)
     if (mutex->owner != current->pid)
     {
         spin_unlock_irqrestore(&mutex->lock, flags);
-        pr_warn_ratelimited("rt_be_mutex: Unlock permission error: owner=%d, current=%d, process=%d\n",
+        pr_warn_ratelimited("rt_deferred_mutex: Unlock permission error: owner=%d, current=%d, process=%d\n",
                             mutex->owner, current->pid, current->tgid);
         return -EPERM;
     }
@@ -241,13 +236,12 @@ retry:
     {
         next_task = list_first_entry(&mutex->wait_queue, struct task_struct, rt_be_mutex_list);
 
-        // Simplified validation
         if (!pid_task(find_vpid(next_task->pid), PIDTYPE_PID) ||
             (next_task->flags & PF_EXITING) ||
             (next_task->state == TASK_DEAD) ||
             (next_task->exit_state != 0))
         {
-            pr_warn_ratelimited("rt_be_mutex: Waiter task %d is dead/exiting\n", next_task->pid);
+            pr_warn_ratelimited("rt_deferred_mutex: Waiter task %d is dead/exiting\n", next_task->pid);
             list_del(&next_task->rt_be_mutex_list);
             put_task_struct(next_task);
             goto retry;
@@ -256,17 +250,16 @@ retry:
         list_del(&next_task->rt_be_mutex_list);
         mutex->owner = next_task->pid;
         next_owner = next_task->pid;
-        boost_task(next_task, false);
+        boost_task(next_task, true); // TODO: Handle overrun toggle using account_overrun arg
         spin_unlock_irqrestore(&mutex->lock, flags);
         wake_up_process(next_task);
-        put_task_struct(next_task); // Drop wait queue reference
+        put_task_struct(next_task); 
 
-        //trace_rt_be_mutex_release(current->pid, next_owner);
+        //trace_rt_deferred_mutex_release(current->pid, next_owner);
 
         // Handle current task throttling properly
         if (current->policy == SCHED_DEADLINE && current->dl.runtime <= 0)
         {
-            // Don't manually set dl_throttled - let scheduler handle it
             set_tsk_need_resched(current);
             schedule();
         }
@@ -276,7 +269,7 @@ retry:
 
     spin_unlock_irqrestore(&mutex->lock, flags);
 
-    //trace_rt_be_mutex_release(current->pid, next_owner);
+    //trace_rt_deferred_mutex_release(current->pid, next_owner);
 
     // Handle current task throttling
     if (current->policy == SCHED_DEADLINE && current->dl.runtime <= 0)
@@ -295,7 +288,7 @@ static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
     if (!dev_class)
     {
-        pr_alert("rt_be_mutex: Device class destroyed, rejecting IOCTL\n");
+        pr_alert("rt_deferred_mutex: Device class destroyed, rejecting IOCTL\n");
         return -ENODEV;
     }
 
@@ -304,12 +297,12 @@ static long dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case IOCTL_LOCK:
         if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
             return -EFAULT;
-        return rt_be_mutex_lock(&my_mutex, args.task_type == TASK_TYPE_RT, args.account_overrun);
+        return rt_deferred_mutex_lock(&my_mutex, args.task_type == TASK_TYPE_RT, args.account_overrun);
 
     case IOCTL_UNLOCK:
         if (copy_from_user(&dummy, (void __user *)arg, sizeof(int)))
             return -EFAULT;
-        return rt_be_mutex_unlock(&my_mutex);
+        return rt_deferred_mutex_unlock(&my_mutex);
 
     default:
         return -EINVAL;
@@ -331,7 +324,7 @@ static int dev_release(struct inode *inode, struct file *file)
 
     if (my_mutex.owner == current->pid)
     {
-        pr_info("rt_be_mutex: Process %d closed FD while owning lock, forcing unlock.\n", current->pid);
+        pr_info("rt_deferred_mutex: Process %d closed FD while owning lock, forcing unlock.\n", current->pid);
         my_mutex.owner = -1;
         unboost_task(current);
     }
@@ -375,7 +368,7 @@ static int dev_release(struct inode *inode, struct file *file)
     list_for_each_safe(pos, n, &deferred_to_cancel)
     {
         dw = list_entry(pos, struct deferred_waiter, list);
-        hrtimer_cancel(&dw->timer); // Safe to call outside spinlock
+        hrtimer_cancel(&dw->timer); 
         list_del(pos);
         put_task_struct(dw->task);
         kfree(dw);
@@ -427,23 +420,23 @@ static void cleanup_all_waiters(void)
 
     if (my_mutex.owner != -1)
     {
-        pr_warn("rt_be_mutex: Force-unlocking. Owner=%d\n", my_mutex.owner);
+        pr_warn("rt_deferred_mutex: Force-unlocking. Owner=%d\n", my_mutex.owner);
         my_mutex.owner = -1;
     }
 
     spin_unlock_irqrestore(&my_mutex.lock, flags);
 }
 
-static int __init rt_be_mutex_init(void)
+static int __init rt_deferred_mutex_init(void)
 {
     int result;
 
-    init_rt_be_mutex(&my_mutex);
+    init_rt_deferred_mutex(&my_mutex);
 
     result = alloc_chrdev_region(&dev_number, 0, 1, DEVICE_NAME);
     if (result < 0)
     {
-        pr_alert("rt_be_mutex: Failed to allocate a major number\n");
+        pr_alert("rt_deferred_mutex: Failed to allocate a major number\n");
         return result;
     }
 
@@ -453,7 +446,7 @@ static int __init rt_be_mutex_init(void)
     if (result < 0)
     {
         unregister_chrdev_region(dev_number, 1);
-        pr_alert("rt_be_mutex: Failed to add cdev\n");
+        pr_alert("rt_deferred_mutex: Failed to add cdev\n");
         return result;
     }
 
@@ -462,7 +455,7 @@ static int __init rt_be_mutex_init(void)
     {
         cdev_del(&rt_be_cdev);
         unregister_chrdev_region(dev_number, 1);
-        pr_alert("rt_be_mutex: Failed to create class\n");
+        pr_alert("rt_deferred_mutex: Failed to create class\n");
         return PTR_ERR(dev_class);
     }
 
@@ -471,27 +464,27 @@ static int __init rt_be_mutex_init(void)
         class_destroy(dev_class);
         cdev_del(&rt_be_cdev);
         unregister_chrdev_region(dev_number, 1);
-        pr_alert("rt_be_mutex: Failed to create device\n");
+        pr_alert("rt_deferred_mutex: Failed to create device\n");
         return -1;
     }
 
-    pr_info("rt_be_mutex: Module loaded, major=%d\n", MAJOR(dev_number));
+    pr_info("rt_deferred_mutex: Module loaded, major=%d\n", MAJOR(dev_number));
     return 0;
 }
 
-static void __exit rt_be_mutex_exit(void)
+static void __exit rt_deferred_mutex_exit(void)
 {
     cleanup_all_waiters();
     device_destroy(dev_class, dev_number);
     class_destroy(dev_class);
     cdev_del(&rt_be_cdev);
     unregister_chrdev_region(dev_number, 1);
-    pr_info("rt_be_mutex: Module unloaded\n");
+    pr_info("rt_deferred_mutex: Module unloaded\n");
 }
 
-module_init(rt_be_mutex_init);
-module_exit(rt_be_mutex_exit);
+module_init(rt_deferred_mutex_init);
+module_exit(rt_deferred_mutex_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Daniel Enright");
-MODULE_DESCRIPTION("RT-BE Mutex Module for LaME ROS 2 Executor.");
+MODULE_DESCRIPTION("RT Deferred Mutex Kernel Module.");
