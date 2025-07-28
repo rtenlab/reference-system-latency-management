@@ -1,16 +1,35 @@
-# Makefile for the rt_be_mutex test program
+# Makefile for dl-mutex-bench
 
-CC = gcc
-CFLAGS = -Wall -O2 -g
-LDFLAGS = -lpthread
+# Compiler and flags
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2
 
-TARGET = test
-SOURCES = test.c
+# Source file
+SRC = dl-mutex-bench.cpp
 
-all: $(TARGET)
+# Output executable
+EXEC = dl-mutex-bench
 
-$(TARGET): $(SOURCES)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# Libraries (added -ldl for dynamic linker functions used by NVTX)
+LIBS = -lpthread -lnvToolsExt -ldl
 
+# NVTX include and library paths (customizable)
+NVTX_INCLUDE_DIR = /usr/local/cuda/targets/sbsa-linux/include
+NVTX_LIB_DIR = /usr/local/cuda/targets/sbsa-linux/lib /usr/local/cuda/lib64
+
+# Add include paths
+INCLUDES = -I$(NVTX_INCLUDE_DIR)
+
+# Default target
+all: $(EXEC)
+
+# Build rule
+$(EXEC): $(SRC)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS) $(addprefix -L, $(NVTX_LIB_DIR))
+
+# Clean rule
 clean:
-	rm -f $(TARGET)
+	rm -f $(EXEC)
+
+# Phony targets
+.PHONY: all clean
